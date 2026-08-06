@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#4f46e5">
+  <title>フラッシュカード</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
+</head>
+<body>
+  <header class="app-header">
+    <button type="button" class="icon-btn" id="back-btn" hidden aria-label="戻る">←</button>
+    <h1 class="app-title">🗂️ フラッシュカード</h1>
+    <button type="button" class="icon-btn" id="settings-btn" aria-label="設定">⚙️</button>
+  </header>
+
+  <main>
+    <!-- 1. 言語選択 -->
+    <section id="screen-home" class="screen">
+      <p class="lead">学習する言語を選んでください。</p>
+      <ul class="deck-list" id="deck-list"></ul>
+      <p class="hint">1 回の学習で出題する単語数は <button type="button" class="link-btn" id="open-settings-link">設定</button> から変更できます（現在: <strong id="home-word-count">20</strong> 語）。</p>
+    </section>
+
+    <!-- 2. 出題数の確認 -->
+    <section id="screen-setup" class="screen" hidden>
+      <h2 class="screen-title" id="setup-deck-name"></h2>
+      <p class="lead">出題する単語数を決めて学習を始めます。</p>
+
+      <div class="field">
+        <label for="setup-word-count">出題する単語数</label>
+        <div class="count-row">
+          <button type="button" class="step-btn" id="count-minus" aria-label="1 減らす">−</button>
+          <input type="number" id="setup-word-count" min="1" step="1" inputmode="numeric">
+          <button type="button" class="step-btn" id="count-plus" aria-label="1 増やす">＋</button>
+        </div>
+        <p class="hint" id="setup-count-hint"></p>
+      </div>
+
+      <dl class="summary">
+        <div><dt>単語帳の総数</dt><dd id="setup-total">-</dd></div>
+        <div><dt>学習済み</dt><dd id="setup-learned">-</dd></div>
+        <div><dt>学習済みの条件</dt><dd id="setup-streak">-</dd></div>
+        <div><dt>出題順</dt><dd id="setup-order">-</dd></div>
+      </dl>
+
+      <button type="button" class="primary-btn" id="start-btn">学習を開始</button>
+      <p class="hint">選んだ単語がすべて学習済みになるまで繰り返し出題されます。</p>
+    </section>
+
+    <!-- 3. 学習画面 -->
+    <section id="screen-study" class="screen" hidden>
+      <div class="progress">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <p class="progress-text"><span id="progress-text">0 / 0 語 学習済み</span><span id="queue-text"></span></p>
+      </div>
+
+      <div class="card" id="card" role="button" tabindex="0" aria-label="カードをめくる">
+        <p class="card-label" id="card-label">単語</p>
+        <p class="card-question" id="card-question"></p>
+        <div class="card-answer" id="card-answer" hidden>
+          <hr>
+          <p class="card-reading" id="card-reading"></p>
+          <p class="card-meaning" id="card-meaning"></p>
+        </div>
+        <p class="card-hint" id="card-hint">タップ / スペースキーで答えを表示</p>
+      </div>
+
+      <div class="answer-actions">
+        <button type="button" class="reveal-btn" id="reveal-btn">答えを見る<span class="key">Space</span></button>
+        <div class="judge-row" id="judge-row" hidden>
+          <button type="button" class="wrong-btn" id="wrong-btn">わからなかった<span class="key">←</span></button>
+          <button type="button" class="correct-btn" id="correct-btn">わかった<span class="key">→</span></button>
+        </div>
+      </div>
+
+      <p class="streak-note" id="streak-note"></p>
+      <button type="button" class="link-btn quit-btn" id="quit-btn">学習を中断する</button>
+    </section>
+
+    <!-- 4. 完了画面 -->
+    <section id="screen-done" class="screen" hidden>
+      <p class="done-emoji">🎉</p>
+      <h2 class="screen-title">すべて学習済みになりました！</h2>
+      <dl class="summary">
+        <div><dt>学習した単語</dt><dd id="done-total">-</dd></div>
+        <div><dt>解答回数</dt><dd id="done-answered">-</dd></div>
+        <div><dt>正答率</dt><dd id="done-accuracy">-</dd></div>
+        <div><dt>所要時間</dt><dd id="done-time">-</dd></div>
+      </dl>
+      <div class="done-actions">
+        <button type="button" class="primary-btn" id="again-btn">同じ言語でもう一度</button>
+        <button type="button" class="secondary-btn" id="home-btn">言語選択に戻る</button>
+      </div>
+    </section>
+
+    <!-- 5. 設定 -->
+    <section id="screen-settings" class="screen" hidden>
+      <h2 class="screen-title">設定</h2>
+
+      <div class="field">
+        <label for="settings-word-count">出題する単語数</label>
+        <input type="number" id="settings-word-count" min="1" max="500" step="1" inputmode="numeric">
+        <p class="hint">1 回の学習で出題する単語の数（デフォルト: 20）。単語帳の総数より多い場合は総数まで自動で調整されます。</p>
+      </div>
+
+      <div class="field">
+        <label for="settings-streak">学習済みと判定する連続正解回数</label>
+        <input type="number" id="settings-streak" min="1" max="10" step="1" inputmode="numeric">
+        <p class="hint">この回数だけ連続で正解するとその単語は学習済みになります（デフォルト: 2）。</p>
+      </div>
+
+      <div class="field">
+        <label for="settings-direction">出題の向き</label>
+        <select id="settings-direction">
+          <option value="term-first">単語 → 意味</option>
+          <option value="meaning-first">意味 → 単語</option>
+          <option value="mixed">ランダム</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="settings-order">単語の選び方</label>
+        <select id="settings-order">
+          <option value="unlearned-first">未学習・苦手を優先</option>
+          <option value="random">ランダム</option>
+          <option value="weak-first">間違えた回数が多い順</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>学習進捗</label>
+        <button type="button" class="danger-btn" id="reset-btn">すべての学習進捗をリセット</button>
+        <p class="hint" id="reset-hint">単語ごとの正解・不正解の記録と学習済み状態を消去します。</p>
+      </div>
+
+      <button type="button" class="primary-btn" id="settings-done-btn">保存して戻る</button>
+    </section>
+  </main>
+
+  <script src="js/decks.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/session.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
