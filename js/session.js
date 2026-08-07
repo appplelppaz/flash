@@ -120,27 +120,35 @@
     return this.queue.length ? this.queue[0] : null;
   };
 
-  /** 現在のカードの表(問題)と裏(答え)を返す */
-  StudySession.prototype.currentFace = function () {
+  /**
+   * 現在のカードを提示する順番で返す。
+   *   単語 → 日本語訳 → その単語を含む例文 → 例文の日本語訳
+   * （出題の向きが「意味 → 単語」のときは最初の 2 つが入れ替わる）
+   * 例文を持たない単語では、その段階は省かれる。
+   */
+  StudySession.prototype.currentSteps = function () {
     var card = this.current();
     if (!card) return null;
     var word = card.word;
-    if (card.askMeaningFirst) {
-      return {
-        question: word.meaning,
-        answer: word.term,
-        reading: word.reading || '',
-        questionLabel: '意味',
-        answerLabel: '単語'
-      };
-    }
-    return {
-      question: word.term,
-      answer: word.meaning,
+
+    var termStep = {
+      key: 'term',
+      label: '単語',
+      text: word.term,
       reading: word.reading || '',
-      questionLabel: '単語',
-      answerLabel: '意味'
+      target: true
     };
+    var meaningStep = { key: 'meaning', label: '日本語訳', text: word.meaning, target: false };
+
+    var steps = card.askMeaningFirst ? [meaningStep, termStep] : [termStep, meaningStep];
+
+    if (word.example) {
+      steps.push({ key: 'example', label: '例文', text: word.example, target: true });
+    }
+    if (word.exampleJa) {
+      steps.push({ key: 'exampleJa', label: '例文の訳', text: word.exampleJa, target: false });
+    }
+    return steps;
   };
 
   /**
@@ -180,6 +188,17 @@
     return { card: card, learned: card.learned, complete: complete };
   };
 
+  /**
+   * 判定せずにカードを後ろへまわす（自動めくりで最後まで見たとき用）。
+   * 正解数・解答数には影響せず、学習済みにもならない。
+   */
+  StudySession.prototype.skip = function () {
+    var card = this.queue.shift();
+    if (!card) return null;
+    this.queue.splice(Math.min(REQUEUE_AFTER_CORRECT, this.queue.length), 0, card);
+    return { card: card, learned: false, complete: false };
+  };
+
   StudySession.prototype.stats = function () {
     return {
       total: this.total(),
@@ -191,34 +210,6 @@
       elapsedMs: (this.finishedAt || Date.now()) - this.startedAt
     };
   };
-
-  /**
-   * 4 択クイズの選択肢を作る。正解 1 つ＋同じ単語帳からのダミー 3 つ。
-   * @param {Object} card    StudySession のカード
-   * @param {Array}  pool    選択肢を取る単語の集合（同じ言語の単語帳）
-   */
-  function makeChoices(card, pool, options) {
-    var opts = options || {};
-    var random = opts.random || Math.random;
-    var size = opts.size || 4;
-    var askMeaningFirst = card.askMeaningFirst;
-    var valueOf = function (word) { return askMeaningFirst ? word.term : word.meaning; };
-    var correct = valueOf(card.word);
-
-    var distractors = [];
-    var seen = {};
-    seen[correct] = true;
-
-    shuffle(pool, random).forEach(function (word) {
-      var value = valueOf(word);
-      if (seen[value] || distractors.length >= size - 1) return;
-      seen[value] = true;
-      distractors.push(value);
-    });
-
-    var choices = shuffle(distractors.concat([correct]), random);
-    return { choices: choices, answerIndex: choices.indexOf(correct), correct: correct };
-  }
 
   /** 苦手（間違えたことがある / 未学習）の単語だけを抜き出す */
   function weakWords(words, progress) {
@@ -232,7 +223,6 @@
   var api = {
     StudySession: StudySession,
     pickWords: pickWords,
-    makeChoices: makeChoices,
     weakWords: weakWords,
     shuffle: shuffle
   };

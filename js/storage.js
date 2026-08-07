@@ -17,9 +17,10 @@
     requiredStreak: 2,        // 学習済みと判定する連続正解回数
     direction: 'term-first',  // term-first | meaning-first | mixed
     order: 'unlearned-first', // unlearned-first | random | weak-first
-    mode: 'flashcard',        // flashcard | quiz
     theme: 'auto',            // auto | light | dark
-    speech: true              // 単語の読み上げ
+    speech: true,             // 読み上げの自動再生
+    autoAdvance: true,        // 自動めくり
+    autoSeconds: 4            // 自動めくりの間隔（秒）
   };
 
   var DEFAULT_STATS = {
@@ -68,9 +69,10 @@
       requiredStreak: clampInt(s.requiredStreak, 1, 10, DEFAULT_SETTINGS.requiredStreak),
       direction: oneOf(s.direction, ['term-first', 'meaning-first', 'mixed'], DEFAULT_SETTINGS.direction),
       order: oneOf(s.order, ['unlearned-first', 'random', 'weak-first'], DEFAULT_SETTINGS.order),
-      mode: oneOf(s.mode, ['flashcard', 'quiz'], DEFAULT_SETTINGS.mode),
       theme: oneOf(s.theme, ['auto', 'light', 'dark'], DEFAULT_SETTINGS.theme),
-      speech: s.speech !== false
+      speech: s.speech !== false,
+      autoAdvance: s.autoAdvance !== false,
+      autoSeconds: clampInt(s.autoSeconds, 1, 20, DEFAULT_SETTINGS.autoSeconds)
     };
   }
 
@@ -117,7 +119,9 @@
     var entry = {
       term: String(word.term || '').trim(),
       reading: String(word.reading || '').trim(),
-      meaning: String(word.meaning || '').trim()
+      meaning: String(word.meaning || '').trim(),
+      example: String(word.example || '').trim(),
+      exampleJa: String(word.exampleJa || '').trim()
     };
     if (!entry.term || !entry.meaning) return { ok: false, reason: 'empty' };
 

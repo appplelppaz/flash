@@ -52,14 +52,6 @@
       <div class="meter"><span id="deck-meter-fill"></span></div>
 
       <div class="block">
-        <p class="block-label">学習モード</p>
-        <div class="segmented" id="mode-group" role="group">
-          <button type="button" data-mode="flashcard" class="seg is-active">フラッシュカード</button>
-          <button type="button" data-mode="quiz" class="seg">4 択クイズ</button>
-        </div>
-      </div>
-
-      <div class="block">
         <p class="block-label">出題する範囲</p>
         <div class="segmented" id="scope-group" role="group">
           <button type="button" data-scope="all" class="seg is-active">すべて</button>
@@ -91,47 +83,30 @@
       </div>
     </section>
 
-    <!-- 学習（フラッシュカード / クイズ共通） -->
+    <!-- 学習 -->
     <section class="screen screen-study" id="screen-study" hidden>
       <div class="study-top">
         <div class="meter"><span id="study-meter-fill"></span></div>
         <p class="study-counts"><span id="study-progress">0 / 0</span><span id="study-queue">残り 0</span></p>
       </div>
 
-      <!-- フラッシュカード -->
-      <div class="flip" id="flip" role="button" tabindex="0" aria-label="カードをめくる">
-        <div class="flip-inner" id="flip-inner">
-          <div class="face face-front">
-            <p class="face-label" id="front-label">単語</p>
-            <p class="face-text" id="front-text"></p>
-            <p class="face-hint">タップ / Space でめくる</p>
-          </div>
-          <div class="face face-back">
-            <p class="face-label" id="back-label">意味</p>
-            <p class="face-text" id="back-text"></p>
-            <p class="face-reading" id="back-reading"></p>
-          </div>
-        </div>
-      </div>
-
-      <!-- クイズ -->
-      <div class="quiz" id="quiz" hidden>
-        <p class="face-label" id="quiz-label">単語</p>
-        <p class="quiz-question" id="quiz-question"></p>
-        <div class="choices" id="quiz-choices"></div>
+      <div class="card" id="card" role="button" tabindex="0" aria-label="次を表示">
+        <div class="card-steps" id="card-steps"></div>
+        <div class="card-timer" id="card-timer" hidden><span id="card-timer-fill"></span></div>
+        <p class="card-hint" id="card-hint">タップ / Space で次を表示</p>
       </div>
 
       <div class="study-tools">
-        <button type="button" class="tool" id="speak-btn" aria-label="読み上げ">🔊 読み上げ</button>
-        <button type="button" class="tool" id="fav-btn" aria-pressed="false" aria-label="お気に入り">☆ お気に入り</button>
+        <button type="button" class="tool" id="speak-btn">🔊 もう一度聞く</button>
+        <button type="button" class="tool" id="auto-btn" aria-pressed="true">⏸ 自動めくり</button>
+        <button type="button" class="tool" id="fav-btn" aria-pressed="false">☆ お気に入り</button>
       </div>
 
       <div class="judge" id="judge" hidden>
         <button type="button" class="btn btn-ghost-wrong" id="wrong-btn">わからなかった<kbd>←</kbd></button>
         <button type="button" class="btn btn-ghost-correct" id="correct-btn">わかった<kbd>→</kbd></button>
       </div>
-      <button type="button" class="btn btn-primary" id="reveal-btn">答えを見る<kbd>Space</kbd></button>
-      <button type="button" class="btn" id="quiz-next-btn" hidden>次へ<kbd>Space</kbd></button>
+      <button type="button" class="btn btn-primary" id="next-btn">次を表示<kbd>Space</kbd></button>
 
       <p class="toast" id="toast"></p>
     </section>
@@ -185,8 +160,16 @@
         <input type="text" id="edit-reading" autocomplete="off">
       </div>
       <div class="block">
-        <label class="block-label" for="edit-meaning">意味</label>
+        <label class="block-label" for="edit-meaning">日本語訳</label>
         <input type="text" id="edit-meaning" autocomplete="off">
+      </div>
+      <div class="block">
+        <label class="block-label" for="edit-example">例文（任意）</label>
+        <input type="text" id="edit-example" autocomplete="off">
+      </div>
+      <div class="block">
+        <label class="block-label" for="edit-example-ja">例文の日本語訳（任意）</label>
+        <input type="text" id="edit-example-ja" autocomplete="off">
       </div>
       <p class="hint error" id="edit-error"></p>
       <div class="actions">
@@ -239,8 +222,20 @@
       </div>
 
       <div class="block toggle-row">
-        <label class="block-label" for="set-speech">単語を読み上げる</label>
+        <label class="block-label" for="set-speech">読み上げを自動再生する</label>
         <input type="checkbox" id="set-speech" class="switch">
+      </div>
+      <p class="hint hint-tight">単語と例文が表示されたときに、その言語で自動的に読み上げます。</p>
+
+      <div class="block toggle-row">
+        <label class="block-label" for="set-auto">自動めくり</label>
+        <input type="checkbox" id="set-auto" class="switch">
+      </div>
+      <p class="hint hint-tight">単語 → 日本語訳 → 例文 → 例文の訳 を自動で送ります。</p>
+
+      <div class="block">
+        <label class="block-label" for="set-auto-seconds">自動めくりの間隔（秒）</label>
+        <input type="number" id="set-auto-seconds" min="1" max="20" step="1" inputmode="numeric">
       </div>
 
       <div class="block">

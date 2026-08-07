@@ -35,10 +35,11 @@
     decks: [],
     deck: null,
     session: null,
-    mode: 'flashcard',
+    steps: [],
+    stepIndex: 0,
+    autoTimer: null,
+    autoPaused: false,
     scope: 'all',
-    revealed: false,
-    quizLocked: false,
     filter: 'all',
     query: '',
     editing: null // { deckId, term } 編集中の自作単語
@@ -72,17 +73,10 @@
     else document.documentElement.setAttribute('data-theme', theme);
   }
 
-  function speak(word, deck) {
-    if (!state.settings.speech || !window.speechSynthesis || !word) return;
-    try {
-      window.speechSynthesis.cancel();
-      var utterance = new window.SpeechSynthesisUtterance(word.term);
-      utterance.lang = (deck && deck.lang) || 'en-US';
-      utterance.rate = 0.95;
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      /* 読み上げ非対応の環境では何もしない */
-    }
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, function (character) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
+    });
   }
 
   function formatDuration(ms) {
@@ -95,12 +89,38 @@
     $('toast').textContent = message || '';
   }
 
+  // ---------- 読み上げ ----------
+
+  function speak(text, lang) {
+    if (!text || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      var utterance = new window.SpeechSynthesisUtterance(text);
+      utterance.lang = lang || (state.deck && state.deck.lang) || 'en-US';
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      /* 読み上げ非対応の環境では何もしない */
+    }
+  }
+
+  function stopSpeaking() {
+    if (window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (err) { /* noop */ }
+    }
+  }
+
   // ---------- 画面遷移 ----------
 
   function showScreen(name, options) {
     var opts = options || {};
     if (!opts.replace && state.screen !== name) state.history.push(state.screen);
     state.screen = name;
+
+    if (name !== 'study') {
+      clearAutoTimer();
+      stopSpeaking();
+    }
 
     SCREENS.forEach(function (screen) {
       document.getElementById('screen-' + screen).hidden = (screen !== name);
@@ -113,7 +133,11 @@
 
   function goBack() {
     if (state.screen === 'study' && state.session && !state.session.isComplete()) {
-      if (!window.confirm('学習を中断しますか？ 途中の結果は記録されません。')) return;
+      clearAutoTimer();
+      if (!window.confirm('学習を中断しますか？ 途中の結果は記録されません。')) {
+        scheduleAuto();
+        return;
+      }
       state.session = null;
     }
     if (state.screen === 'settings') applySettingsForm();
@@ -183,7 +207,6 @@
     refreshDecks();
     state.deck = state.decks.filter(function (d) { return d.id === deckId; })[0] || null;
     if (!state.deck) return;
-    state.mode = state.settings.mode;
     state.scope = 'all';
     $('deck-word-count').value = Math.min(state.settings.wordCount, state.deck.words.length);
     renderDeck();
@@ -213,9 +236,6 @@
     $('deck-sub').textContent = stat.learned + ' / ' + stat.total + ' 語 学習済み';
     $('deck-meter-fill').style.width = percent + '%';
 
-    Array.prototype.forEach.call($('mode-group').children, function (button) {
-      button.classList.toggle('is-active', button.dataset.mode === state.mode);
-    });
     Array.prototype.forEach.call($('scope-group').children, function (button) {
       button.classList.toggle('is-active', button.dataset.scope === state.scope);
     });
@@ -263,9 +283,11 @@
       requiredStreak: state.settings.requiredStreak,
       direction: state.settings.direction
     });
+    state.autoPaused = false;
 
     toast('');
     showScreen('study');
+    renderAutoButton();
     renderCard();
   }
 
@@ -277,126 +299,159 @@
     $('study-queue').textContent = '残り ' + state.session.queue.length + ' 枚';
   }
 
+  /** カードを最初の段階（単語）から表示する */
   function renderCard() {
     var session = state.session;
     if (!session) return;
 
     renderStudyProgress();
 
-    var card = session.current();
-    if (!card) {
+    if (!session.current()) {
       finishSession();
       return;
     }
 
-    var face = session.currentFace();
-    state.revealed = false;
-    state.quizLocked = false;
+    state.steps = session.currentSteps();
+    state.stepIndex = 0;
+    renderSteps();
+  }
 
-    var isQuiz = state.mode === 'quiz';
-    $('flip').hidden = isQuiz;
-    $('quiz').hidden = !isQuiz;
-    $('reveal-btn').hidden = isQuiz;
-    $('judge').hidden = true;
-    $('quiz-next-btn').hidden = true;
+  /** いま表示すべき段階までを描画する */
+  function renderSteps() {
+    var container = $('card-steps');
+    container.innerHTML = '';
+
+    state.steps.slice(0, state.stepIndex + 1).forEach(function (step, index) {
+      var div = document.createElement('div');
+      div.className = 'card-step' + (index === state.stepIndex ? ' is-current' : '');
+      div.dataset.key = step.key;
+      div.innerHTML =
+        '<span class="step-label">' + step.label + '</span>' +
+        '<p class="step-text">' + escapeHtml(step.text) + '</p>' +
+        (step.reading ? '<p class="step-reading">' + escapeHtml(step.reading) + '</p>' : '');
+      container.appendChild(div);
+    });
+
+    var isLast = state.stepIndex >= state.steps.length - 1;
+    $('judge').hidden = !isLast;
+    $('next-btn').hidden = isLast;
+    $('card-hint').hidden = isLast;
 
     var favorites = Storage.loadFavorites();
-    var isFav = favorites[card.word.id] === true;
+    var card = state.session.current();
+    var isFav = card ? favorites[card.word.id] === true : false;
     $('fav-btn').setAttribute('aria-pressed', isFav ? 'true' : 'false');
     $('fav-btn').textContent = (isFav ? '★' : '☆') + ' お気に入り';
 
-    if (isQuiz) {
-      $('quiz-label').textContent = face.questionLabel;
-      $('quiz-question').textContent = face.question;
-      renderChoices(card, face);
-    } else {
-      $('flip').classList.remove('is-flipped');
-      $('front-label').textContent = face.questionLabel;
-      $('front-text').textContent = face.question;
-      $('back-label').textContent = face.answerLabel;
-      $('back-text').textContent = face.answer;
-      $('back-reading').textContent = face.reading;
+    // 自動再生（単語・例文だけを対象言語で読み上げる）
+    var step = state.steps[state.stepIndex];
+    if (state.settings.speech && step && step.target) {
+      speak(step.text, state.deck.lang);
     }
+
+    scheduleAuto();
   }
 
-  function renderChoices(card, face) {
-    var pool = state.deck.words.filter(function (word) { return word.id !== card.word.id; });
-    var quiz = Study.makeChoices(card, pool);
-    var container = $('quiz-choices');
-    container.innerHTML = '';
+  // ---------- 自動めくり ----------
 
-    quiz.choices.forEach(function (choice, index) {
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'choice';
-      button.dataset.value = choice;
-      button.innerHTML = '<span class="num">' + (index + 1) + '</span><span>' + escapeHtml(choice) + '</span>';
-      button.addEventListener('click', function () {
-        answerQuiz(button, choice === quiz.correct, quiz.correct);
+  function clearAutoTimer() {
+    if (state.autoTimer) {
+      clearTimeout(state.autoTimer);
+      state.autoTimer = null;
+    }
+    var fill = $('card-timer-fill');
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+    $('card-timer').hidden = true;
+  }
+
+  function scheduleAuto() {
+    clearAutoTimer();
+    if (!state.settings.autoAdvance || state.autoPaused || state.screen !== 'study') return;
+
+    var seconds = state.settings.autoSeconds;
+    var timer = $('card-timer');
+    var fill = $('card-timer-fill');
+    timer.hidden = false;
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(function () {
+        fill.style.transition = 'width ' + seconds + 's linear';
+        fill.style.width = '100%';
       });
-      container.appendChild(button);
     });
+
+    state.autoTimer = setTimeout(function () {
+      state.autoTimer = null;
+      advance({ auto: true });
+    }, seconds * 1000);
   }
 
-  function escapeHtml(text) {
-    return String(text).replace(/[&<>"']/g, function (character) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
-    });
+  function renderAutoButton() {
+    var on = state.settings.autoAdvance && !state.autoPaused;
+    $('auto-btn').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('auto-btn').textContent = (on ? '⏸' : '▶') + ' 自動めくり';
   }
 
-  function answerQuiz(button, isCorrect, correctText) {
-    if (state.quizLocked) return;
-    state.quizLocked = true;
-
-    Array.prototype.forEach.call($('quiz-choices').children, function (choice) {
-      choice.disabled = true;
-      if (choice.dataset.value === correctText) choice.classList.add('is-correct');
-    });
-    if (!isCorrect) button.classList.add('is-wrong');
-
-    applyAnswer(isCorrect);
-    $('quiz-next-btn').hidden = false;
-    $('quiz-next-btn').focus();
+  function toggleAuto() {
+    if (!state.settings.autoAdvance) {
+      // 設定でオフの場合はこの場でオンにする
+      state.settings = Storage.saveSettings(
+        Object.assign({}, state.settings, { autoAdvance: true }));
+      state.autoPaused = false;
+    } else {
+      state.autoPaused = !state.autoPaused;
+    }
+    renderAutoButton();
+    if (state.autoPaused) clearAutoTimer();
+    else scheduleAuto();
   }
 
-  function reveal() {
-    if (state.mode === 'quiz' || state.revealed || !state.session || !state.session.current()) return;
-    state.revealed = true;
-    $('flip').classList.add('is-flipped');
-    $('reveal-btn').hidden = true;
-    $('judge').hidden = false;
+  /**
+   * 次の段階へ進む。最後の段階から先へ進むときは、
+   * 手動なら何もせず判定を待ち、自動なら記録せずに再出題へまわす。
+   */
+  function advance(options) {
+    var opts = options || {};
+    if (!state.session || !state.session.current()) return;
+
+    if (state.stepIndex < state.steps.length - 1) {
+      state.stepIndex++;
+      renderSteps();
+      return;
+    }
+
+    if (!opts.auto) return; // 手動では最後の段階で止まり、判定を待つ
+
+    state.session.skip();
+    toast('判定しなかったので、この単語はもう一度出題します');
+    renderCard();
   }
 
-  /** 正誤をセッションに反映し、メッセージを出す（カードの再描画はしない） */
-  function applyAnswer(isCorrect) {
+  function judge(isCorrect) {
     var session = state.session;
+    if (!session || !session.current()) return;
+
+    clearAutoTimer();
+    stopSpeaking();
+
     var required = session.requiredStreak;
     var result = session.answer(isCorrect);
-    if (!result) return null;
+    if (!result) return;
 
     var term = result.card.word.term;
     if (result.learned) {
       toast('✓ 「' + term + '」を学習済みにしました');
     } else if (isCorrect) {
-      toast('連続 ' + result.card.streak + ' / ' + required + ' — あと ' + (required - result.card.streak) + ' 回で学習済み');
+      toast('連続 ' + result.card.streak + ' / ' + required + ' — あと ' +
+        (required - result.card.streak) + ' 回で学習済み');
     } else {
       toast('「' + term + '」はもう一度出題します');
     }
-    renderStudyProgress();
-    return result;
-  }
 
-  function judge(isCorrect) {
-    if (state.mode === 'quiz' || !state.revealed) return;
-    var result = applyAnswer(isCorrect);
-    if (!result) return;
     if (result.complete) finishSession();
-    else renderCard();
-  }
-
-  function nextQuizCard() {
-    if (!state.quizLocked) return;
-    if (state.session.isComplete()) finishSession();
     else renderCard();
   }
 
@@ -404,11 +459,13 @@
     var session = state.session;
     if (!session) return;
 
+    clearAutoTimer();
+    stopSpeaking();
+
     var stats = session.stats();
     var saved = Storage.recordSession(session.cards, stats);
 
-    $('result-sub').textContent = state.deck.name + ' · ' +
-      (state.mode === 'quiz' ? '4 択クイズ' : 'フラッシュカード') + ' · ' + SCOPE_LABELS[state.scope];
+    $('result-sub').textContent = state.deck.name + ' · ' + SCOPE_LABELS[state.scope];
     $('result-total').textContent = stats.learned + ' / ' + stats.total + ' 語';
     $('result-answered').textContent = stats.answered + ' 回';
     $('result-accuracy').textContent = Math.round(stats.accuracy * 100) + '%';
@@ -443,7 +500,8 @@
       if (state.filter === 'weak' && !(stat.wrong > 0 && !stat.learned)) return false;
       if (state.filter === 'fav' && !favorites[word.id]) return false;
       if (!query) return true;
-      return (word.term + ' ' + (word.reading || '') + ' ' + word.meaning).toLowerCase().indexOf(query) >= 0;
+      var haystack = [word.term, word.reading, word.meaning, word.example, word.exampleJa].join(' ');
+      return haystack.toLowerCase().indexOf(query) >= 0;
     });
   }
 
@@ -483,6 +541,7 @@
             (word.reading ? '<span class="badge">' + escapeHtml(word.reading) + '</span>' : '') +
           '</span>' +
           '<span class="word-meaning">' + escapeHtml(word.meaning) + '</span>' +
+          (word.example ? '<span class="word-example">' + escapeHtml(word.example) + '</span>' : '') +
         '</span>';
 
       var favBtn = document.createElement('button');
@@ -500,7 +559,7 @@
       speakBtn.className = 'row-btn';
       speakBtn.textContent = '🔊';
       speakBtn.setAttribute('aria-label', '読み上げ');
-      speakBtn.addEventListener('click', function () { speak(word, state.deck); });
+      speakBtn.addEventListener('click', function () { speak(word.term, state.deck.lang); });
 
       li.appendChild(favBtn);
       li.appendChild(speakBtn);
@@ -527,6 +586,8 @@
     $('edit-term').value = word ? word.term : '';
     $('edit-reading').value = word ? (word.reading || '') : '';
     $('edit-meaning').value = word ? word.meaning : '';
+    $('edit-example').value = word ? (word.example || '') : '';
+    $('edit-example-ja').value = word ? (word.exampleJa || '') : '';
     $('edit-error').textContent = '';
     $('edit-delete-btn').hidden = !word;
     showScreen('edit');
@@ -537,13 +598,15 @@
     var result = Storage.saveCustomWord(state.deck.id, {
       term: $('edit-term').value,
       reading: $('edit-reading').value,
-      meaning: $('edit-meaning').value
+      meaning: $('edit-meaning').value,
+      example: $('edit-example').value,
+      exampleJa: $('edit-example-ja').value
     }, state.editing ? state.editing.term : null);
 
     if (!result.ok) {
       $('edit-error').textContent = result.reason === 'duplicate'
         ? 'その単語はすでに登録されています。'
-        : '単語と意味は必須です。';
+        : '単語と日本語訳は必須です。';
       return;
     }
 
@@ -574,6 +637,8 @@
     $('set-order').value = state.settings.order;
     $('set-theme').value = state.settings.theme;
     $('set-speech').checked = state.settings.speech;
+    $('set-auto').checked = state.settings.autoAdvance;
+    $('set-auto-seconds').value = state.settings.autoSeconds;
   }
 
   function applySettingsForm() {
@@ -582,9 +647,10 @@
       requiredStreak: $('set-streak').value,
       direction: $('set-direction').value,
       order: $('set-order').value,
-      mode: state.mode,
       theme: $('set-theme').value,
-      speech: $('set-speech').checked
+      speech: $('set-speech').checked,
+      autoAdvance: $('set-auto').checked,
+      autoSeconds: $('set-auto-seconds').value
     });
     fillSettingsForm();
     applyTheme();
@@ -643,14 +709,6 @@
     $('settings-done-btn').addEventListener('click', goBack);
 
     // デッキ画面
-    $('mode-group').addEventListener('click', function (event) {
-      var button = event.target.closest('[data-mode]');
-      if (!button) return;
-      state.mode = button.dataset.mode;
-      state.settings = Storage.saveSettings(Object.assign({}, state.settings, { mode: state.mode }));
-      renderDeck();
-    });
-
     $('scope-group').addEventListener('click', function (event) {
       var button = event.target.closest('[data-scope]');
       if (!button) return;
@@ -681,21 +739,24 @@
     $('open-list-btn').addEventListener('click', openList);
 
     // 学習画面
-    $('flip').addEventListener('click', reveal);
-    $('flip').addEventListener('keydown', function (event) {
+    $('card').addEventListener('click', function () { advance(); });
+    $('card').addEventListener('keydown', function (event) {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        reveal();
+        advance();
       }
     });
-    $('reveal-btn').addEventListener('click', reveal);
+    $('next-btn').addEventListener('click', function () { advance(); });
     $('correct-btn').addEventListener('click', function () { judge(true); });
     $('wrong-btn').addEventListener('click', function () { judge(false); });
-    $('quiz-next-btn').addEventListener('click', nextQuizCard);
+    $('auto-btn').addEventListener('click', toggleAuto);
 
     $('speak-btn').addEventListener('click', function () {
+      var step = state.steps[state.stepIndex];
       var card = state.session && state.session.current();
-      if (card) speak(card.word, state.deck);
+      if (!card) return;
+      // いまの段階が対象言語ならそれを、そうでなければ単語を読み上げる
+      speak(step && step.target ? step.text : card.word.term, state.deck.lang);
     });
 
     $('fav-btn').addEventListener('click', function () {
@@ -763,31 +824,27 @@
       var tag = (event.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
 
-      if (state.mode === 'quiz') {
-        if (state.quizLocked && (event.key === ' ' || event.key === 'Enter')) {
-          event.preventDefault();
-          nextQuizCard();
-          return;
-        }
-        var index = parseInt(event.key, 10);
-        if (!state.quizLocked && index >= 1 && index <= 4) {
-          event.preventDefault();
-          var choice = $('quiz-choices').children[index - 1];
-          if (choice) choice.click();
-        }
-        return;
-      }
+      var isLast = state.stepIndex >= state.steps.length - 1;
 
-      if (!state.revealed && (event.key === ' ' || event.key === 'Enter')) {
+      if (event.key === ' ' || event.key === 'Enter') {
         event.preventDefault();
-        reveal();
-      } else if (state.revealed && (event.key === 'ArrowRight' || event.key === '2')) {
+        advance();
+      } else if (isLast && (event.key === 'ArrowRight' || event.key === '2')) {
         event.preventDefault();
         judge(true);
-      } else if (state.revealed && (event.key === 'ArrowLeft' || event.key === '1')) {
+      } else if (isLast && (event.key === 'ArrowLeft' || event.key === '1')) {
         event.preventDefault();
         judge(false);
+      } else if (event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        toggleAuto();
       }
+    });
+
+    // タブが非表示になったら自動めくりを止める
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) clearAutoTimer();
+      else if (state.screen === 'study') scheduleAuto();
     });
   }
 
