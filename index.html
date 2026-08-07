@@ -2,140 +2,259 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#4f46e5">
-  <title>フラッシュカード</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0d">
+  <meta name="description" content="言語ごとの単語帳から任意の語数を選び、すべて学習済みになるまで繰り返すフラッシュカードアプリ">
+  <title>Flashcards</title>
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230b0b0d'/><rect x='8' y='10' width='16' height='12' rx='2.5' fill='none' stroke='white' stroke-width='2'/></svg>">
 </head>
 <body>
-  <header class="app-header">
-    <button type="button" class="icon-btn" id="back-btn" hidden aria-label="戻る">←</button>
-    <h1 class="app-title">🗂️ フラッシュカード</h1>
-    <button type="button" class="icon-btn" id="settings-btn" aria-label="設定">⚙️</button>
+  <header class="topbar">
+    <button type="button" class="icon-btn" id="back-btn" aria-label="戻る">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <p class="topbar-title" id="topbar-title">Flashcards</p>
+    <button type="button" class="icon-btn" id="settings-btn" aria-label="設定">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+    </button>
   </header>
 
-  <main>
-    <!-- 1. 言語選択 -->
-    <section id="screen-home" class="screen">
-      <p class="lead">学習する言語を選んでください。</p>
+  <main id="main">
+    <!-- ホーム -->
+    <section class="screen" id="screen-home">
+      <div class="hero">
+        <h1>今日も 1 セットだけ。</h1>
+        <p>選んだ単語がすべて学習済みになるまで繰り返します。</p>
+      </div>
+
+      <div class="stat-strip">
+        <div class="stat"><span class="stat-value" id="stat-learned">0</span><span class="stat-label">学習済み</span></div>
+        <div class="stat"><span class="stat-value" id="stat-streak">0</span><span class="stat-label">連続日数</span></div>
+        <div class="stat"><span class="stat-value" id="stat-accuracy">—</span><span class="stat-label">正答率</span></div>
+      </div>
+
       <ul class="deck-list" id="deck-list"></ul>
-      <p class="hint">1 回の学習で出題する単語数は <button type="button" class="link-btn" id="open-settings-link">設定</button> から変更できます（現在: <strong id="home-word-count">20</strong> 語）。</p>
+
+      <p class="foot-note">1 回の出題数は現在 <strong id="home-word-count">20</strong> 語です。<button type="button" class="link" id="open-settings-link">設定を開く</button></p>
     </section>
 
-    <!-- 2. 出題数の確認 -->
-    <section id="screen-setup" class="screen" hidden>
-      <h2 class="screen-title" id="setup-deck-name"></h2>
-      <p class="lead">出題する単語数を決めて学習を始めます。</p>
-
-      <div class="field">
-        <label for="setup-word-count">出題する単語数</label>
-        <div class="count-row">
-          <button type="button" class="step-btn" id="count-minus" aria-label="1 減らす">−</button>
-          <input type="number" id="setup-word-count" min="1" step="1" inputmode="numeric">
-          <button type="button" class="step-btn" id="count-plus" aria-label="1 増やす">＋</button>
+    <!-- デッキ（出題設定） -->
+    <section class="screen" id="screen-deck" hidden>
+      <div class="deck-head">
+        <span class="code-chip" id="deck-code">EN</span>
+        <div>
+          <h2 id="deck-name">英語</h2>
+          <p class="muted" id="deck-sub">0 / 0 語 学習済み</p>
         </div>
-        <p class="hint" id="setup-count-hint"></p>
       </div>
 
-      <dl class="summary">
-        <div><dt>単語帳の総数</dt><dd id="setup-total">-</dd></div>
-        <div><dt>学習済み</dt><dd id="setup-learned">-</dd></div>
-        <div><dt>学習済みの条件</dt><dd id="setup-streak">-</dd></div>
-        <div><dt>出題順</dt><dd id="setup-order">-</dd></div>
+      <div class="meter"><span id="deck-meter-fill"></span></div>
+
+      <div class="block">
+        <p class="block-label">学習モード</p>
+        <div class="segmented" id="mode-group" role="group">
+          <button type="button" data-mode="flashcard" class="seg is-active">フラッシュカード</button>
+          <button type="button" data-mode="quiz" class="seg">4 択クイズ</button>
+        </div>
+      </div>
+
+      <div class="block">
+        <p class="block-label">出題する範囲</p>
+        <div class="segmented" id="scope-group" role="group">
+          <button type="button" data-scope="all" class="seg is-active">すべて</button>
+          <button type="button" data-scope="weak" class="seg">苦手のみ</button>
+          <button type="button" data-scope="fav" class="seg">★ のみ</button>
+        </div>
+        <p class="hint" id="scope-hint"></p>
+      </div>
+
+      <div class="block">
+        <p class="block-label">出題する単語数</p>
+        <div class="stepper">
+          <button type="button" class="step" id="count-minus" aria-label="1 減らす">−</button>
+          <input type="number" id="deck-word-count" min="1" step="1" inputmode="numeric" aria-label="出題する単語数">
+          <button type="button" class="step" id="count-plus" aria-label="1 増やす">＋</button>
+        </div>
+        <div class="chips" id="count-presets">
+          <button type="button" class="chip" data-count="10">10</button>
+          <button type="button" class="chip" data-count="20">20</button>
+          <button type="button" class="chip" data-count="30">30</button>
+          <button type="button" class="chip" data-count="all">すべて</button>
+        </div>
+        <p class="hint" id="count-hint"></p>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="start-btn">学習を開始</button>
+        <button type="button" class="btn" id="open-list-btn">単語一覧・編集</button>
+      </div>
+    </section>
+
+    <!-- 学習（フラッシュカード / クイズ共通） -->
+    <section class="screen screen-study" id="screen-study" hidden>
+      <div class="study-top">
+        <div class="meter"><span id="study-meter-fill"></span></div>
+        <p class="study-counts"><span id="study-progress">0 / 0</span><span id="study-queue">残り 0</span></p>
+      </div>
+
+      <!-- フラッシュカード -->
+      <div class="flip" id="flip" role="button" tabindex="0" aria-label="カードをめくる">
+        <div class="flip-inner" id="flip-inner">
+          <div class="face face-front">
+            <p class="face-label" id="front-label">単語</p>
+            <p class="face-text" id="front-text"></p>
+            <p class="face-hint">タップ / Space でめくる</p>
+          </div>
+          <div class="face face-back">
+            <p class="face-label" id="back-label">意味</p>
+            <p class="face-text" id="back-text"></p>
+            <p class="face-reading" id="back-reading"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- クイズ -->
+      <div class="quiz" id="quiz" hidden>
+        <p class="face-label" id="quiz-label">単語</p>
+        <p class="quiz-question" id="quiz-question"></p>
+        <div class="choices" id="quiz-choices"></div>
+      </div>
+
+      <div class="study-tools">
+        <button type="button" class="tool" id="speak-btn" aria-label="読み上げ">🔊 読み上げ</button>
+        <button type="button" class="tool" id="fav-btn" aria-pressed="false" aria-label="お気に入り">☆ お気に入り</button>
+      </div>
+
+      <div class="judge" id="judge" hidden>
+        <button type="button" class="btn btn-ghost-wrong" id="wrong-btn">わからなかった<kbd>←</kbd></button>
+        <button type="button" class="btn btn-ghost-correct" id="correct-btn">わかった<kbd>→</kbd></button>
+      </div>
+      <button type="button" class="btn btn-primary" id="reveal-btn">答えを見る<kbd>Space</kbd></button>
+      <button type="button" class="btn" id="quiz-next-btn" hidden>次へ<kbd>Space</kbd></button>
+
+      <p class="toast" id="toast"></p>
+    </section>
+
+    <!-- 結果 -->
+    <section class="screen" id="screen-result" hidden>
+      <div class="result-head">
+        <p class="result-mark">✓</p>
+        <h2>すべて学習済みになりました</h2>
+        <p class="muted" id="result-sub"></p>
+      </div>
+      <dl class="rows">
+        <div><dt>学習した単語</dt><dd id="result-total">-</dd></div>
+        <div><dt>解答回数</dt><dd id="result-answered">-</dd></div>
+        <div><dt>正答率</dt><dd id="result-accuracy">-</dd></div>
+        <div><dt>所要時間</dt><dd id="result-time">-</dd></div>
+        <div><dt>連続学習日数</dt><dd id="result-streak">-</dd></div>
       </dl>
-
-      <button type="button" class="primary-btn" id="start-btn">学習を開始</button>
-      <p class="hint">選んだ単語がすべて学習済みになるまで繰り返し出題されます。</p>
-    </section>
-
-    <!-- 3. 学習画面 -->
-    <section id="screen-study" class="screen" hidden>
-      <div class="progress">
-        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-        <p class="progress-text"><span id="progress-text">0 / 0 語 学習済み</span><span id="queue-text"></span></p>
-      </div>
-
-      <div class="card" id="card" role="button" tabindex="0" aria-label="カードをめくる">
-        <p class="card-label" id="card-label">単語</p>
-        <p class="card-question" id="card-question"></p>
-        <div class="card-answer" id="card-answer" hidden>
-          <hr>
-          <p class="card-reading" id="card-reading"></p>
-          <p class="card-meaning" id="card-meaning"></p>
-        </div>
-        <p class="card-hint" id="card-hint">タップ / スペースキーで答えを表示</p>
-      </div>
-
-      <div class="answer-actions">
-        <button type="button" class="reveal-btn" id="reveal-btn">答えを見る<span class="key">Space</span></button>
-        <div class="judge-row" id="judge-row" hidden>
-          <button type="button" class="wrong-btn" id="wrong-btn">わからなかった<span class="key">←</span></button>
-          <button type="button" class="correct-btn" id="correct-btn">わかった<span class="key">→</span></button>
-        </div>
-      </div>
-
-      <p class="streak-note" id="streak-note"></p>
-      <button type="button" class="link-btn quit-btn" id="quit-btn">学習を中断する</button>
-    </section>
-
-    <!-- 4. 完了画面 -->
-    <section id="screen-done" class="screen" hidden>
-      <p class="done-emoji">🎉</p>
-      <h2 class="screen-title">すべて学習済みになりました！</h2>
-      <dl class="summary">
-        <div><dt>学習した単語</dt><dd id="done-total">-</dd></div>
-        <div><dt>解答回数</dt><dd id="done-answered">-</dd></div>
-        <div><dt>正答率</dt><dd id="done-accuracy">-</dd></div>
-        <div><dt>所要時間</dt><dd id="done-time">-</dd></div>
-      </dl>
-      <div class="done-actions">
-        <button type="button" class="primary-btn" id="again-btn">同じ言語でもう一度</button>
-        <button type="button" class="secondary-btn" id="home-btn">言語選択に戻る</button>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="again-btn">同じ設定でもう一度</button>
+        <button type="button" class="btn" id="result-home-btn">ホームに戻る</button>
       </div>
     </section>
 
-    <!-- 5. 設定 -->
-    <section id="screen-settings" class="screen" hidden>
+    <!-- 単語一覧 -->
+    <section class="screen" id="screen-list" hidden>
+      <div class="search-row">
+        <input type="search" id="search-input" placeholder="単語・意味で検索" aria-label="単語を検索">
+      </div>
+      <div class="chips" id="filter-chips">
+        <button type="button" class="chip is-active" data-filter="all">すべて</button>
+        <button type="button" class="chip" data-filter="unlearned">未学習</button>
+        <button type="button" class="chip" data-filter="learned">学習済み</button>
+        <button type="button" class="chip" data-filter="weak">苦手</button>
+        <button type="button" class="chip" data-filter="fav">★</button>
+      </div>
+      <p class="hint" id="list-count"></p>
+      <ul class="word-list" id="word-list"></ul>
+      <button type="button" class="btn btn-primary sticky-add" id="add-word-btn">＋ 単語を追加</button>
+    </section>
+
+    <!-- 単語の追加・編集 -->
+    <section class="screen" id="screen-edit" hidden>
+      <h2 class="screen-title" id="edit-title">単語を追加</h2>
+      <div class="block">
+        <label class="block-label" for="edit-term">単語</label>
+        <input type="text" id="edit-term" autocomplete="off">
+      </div>
+      <div class="block">
+        <label class="block-label" for="edit-reading">読み・発音（任意）</label>
+        <input type="text" id="edit-reading" autocomplete="off">
+      </div>
+      <div class="block">
+        <label class="block-label" for="edit-meaning">意味</label>
+        <input type="text" id="edit-meaning" autocomplete="off">
+      </div>
+      <p class="hint error" id="edit-error"></p>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="edit-save-btn">保存</button>
+        <button type="button" class="btn btn-danger" id="edit-delete-btn" hidden>この単語を削除</button>
+      </div>
+    </section>
+
+    <!-- 設定 -->
+    <section class="screen" id="screen-settings" hidden>
       <h2 class="screen-title">設定</h2>
 
-      <div class="field">
-        <label for="settings-word-count">出題する単語数</label>
-        <input type="number" id="settings-word-count" min="1" max="500" step="1" inputmode="numeric">
-        <p class="hint">1 回の学習で出題する単語の数（デフォルト: 20）。単語帳の総数より多い場合は総数まで自動で調整されます。</p>
+      <div class="block">
+        <label class="block-label" for="set-word-count">出題する単語数</label>
+        <input type="number" id="set-word-count" min="1" max="500" step="1" inputmode="numeric">
+        <p class="hint">1 回の学習で出題する単語数（デフォルト 20）。単語帳の総数より多い場合は総数に丸められます。</p>
       </div>
 
-      <div class="field">
-        <label for="settings-streak">学習済みと判定する連続正解回数</label>
-        <input type="number" id="settings-streak" min="1" max="10" step="1" inputmode="numeric">
-        <p class="hint">この回数だけ連続で正解するとその単語は学習済みになります（デフォルト: 2）。</p>
+      <div class="block">
+        <label class="block-label" for="set-streak">学習済みと判定する連続正解回数</label>
+        <input type="number" id="set-streak" min="1" max="10" step="1" inputmode="numeric">
+        <p class="hint">この回数だけ連続で正解すると学習済みになります（デフォルト 2）。</p>
       </div>
 
-      <div class="field">
-        <label for="settings-direction">出題の向き</label>
-        <select id="settings-direction">
+      <div class="block">
+        <label class="block-label" for="set-direction">出題の向き</label>
+        <select id="set-direction">
           <option value="term-first">単語 → 意味</option>
           <option value="meaning-first">意味 → 単語</option>
           <option value="mixed">ランダム</option>
         </select>
       </div>
 
-      <div class="field">
-        <label for="settings-order">単語の選び方</label>
-        <select id="settings-order">
+      <div class="block">
+        <label class="block-label" for="set-order">単語の選び方</label>
+        <select id="set-order">
           <option value="unlearned-first">未学習・苦手を優先</option>
           <option value="random">ランダム</option>
           <option value="weak-first">間違えた回数が多い順</option>
         </select>
       </div>
 
-      <div class="field">
-        <label>学習進捗</label>
-        <button type="button" class="danger-btn" id="reset-btn">すべての学習進捗をリセット</button>
-        <p class="hint" id="reset-hint">単語ごとの正解・不正解の記録と学習済み状態を消去します。</p>
+      <div class="block">
+        <label class="block-label" for="set-theme">テーマ</label>
+        <select id="set-theme">
+          <option value="auto">端末に合わせる</option>
+          <option value="light">ライト</option>
+          <option value="dark">ダーク</option>
+        </select>
       </div>
 
-      <button type="button" class="primary-btn" id="settings-done-btn">保存して戻る</button>
+      <div class="block toggle-row">
+        <label class="block-label" for="set-speech">単語を読み上げる</label>
+        <input type="checkbox" id="set-speech" class="switch">
+      </div>
+
+      <div class="block">
+        <p class="block-label">データ</p>
+        <div class="actions">
+          <button type="button" class="btn" id="export-btn">バックアップを書き出す</button>
+          <button type="button" class="btn" id="import-btn">バックアップを読み込む</button>
+          <button type="button" class="btn btn-danger" id="reset-btn">学習進捗をリセット</button>
+        </div>
+        <input type="file" id="import-file" accept="application/json" hidden>
+        <p class="hint" id="data-hint">設定・進捗・お気に入り・自作単語をまとめて JSON で保存できます。</p>
+      </div>
+
+      <button type="button" class="btn btn-primary" id="settings-done-btn">保存して戻る</button>
     </section>
   </main>
 

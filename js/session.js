@@ -192,9 +192,48 @@
     };
   };
 
+  /**
+   * 4 択クイズの選択肢を作る。正解 1 つ＋同じ単語帳からのダミー 3 つ。
+   * @param {Object} card    StudySession のカード
+   * @param {Array}  pool    選択肢を取る単語の集合（同じ言語の単語帳）
+   */
+  function makeChoices(card, pool, options) {
+    var opts = options || {};
+    var random = opts.random || Math.random;
+    var size = opts.size || 4;
+    var askMeaningFirst = card.askMeaningFirst;
+    var valueOf = function (word) { return askMeaningFirst ? word.term : word.meaning; };
+    var correct = valueOf(card.word);
+
+    var distractors = [];
+    var seen = {};
+    seen[correct] = true;
+
+    shuffle(pool, random).forEach(function (word) {
+      var value = valueOf(word);
+      if (seen[value] || distractors.length >= size - 1) return;
+      seen[value] = true;
+      distractors.push(value);
+    });
+
+    var choices = shuffle(distractors.concat([correct]), random);
+    return { choices: choices, answerIndex: choices.indexOf(correct), correct: correct };
+  }
+
+  /** 苦手（間違えたことがある / 未学習）の単語だけを抜き出す */
+  function weakWords(words, progress) {
+    var stats = progress || {};
+    return words.filter(function (word) {
+      var stat = stats[word.id];
+      return stat && stat.wrong > 0 && !stat.learned;
+    });
+  }
+
   var api = {
     StudySession: StudySession,
     pickWords: pickWords,
+    makeChoices: makeChoices,
+    weakWords: weakWords,
     shuffle: shuffle
   };
 

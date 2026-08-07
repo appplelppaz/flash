@@ -143,6 +143,102 @@ test('設定は範囲外の値を補正する', function () {
   assert.strictEqual(Storage.normalizeSettings({ direction: 'bogus' }).direction, 'term-first');
 });
 
+test('4 択クイズは正解 1 つとダミー 3 つを返す', function () {
+  var words = makeWords(10);
+  var session = new Study.StudySession({ words: [words[0]], direction: 'term-first' });
+  var quiz = Study.makeChoices(session.cards[0], words.slice(1));
+
+  assert.strictEqual(quiz.choices.length, 4);
+  assert.strictEqual(new Set(quiz.choices).size, 4, '選択肢が重複している');
+  assert.strictEqual(quiz.choices[quiz.answerIndex], words[0].meaning);
+  assert.strictEqual(quiz.correct, words[0].meaning);
+});
+
+test('4 択クイズは出題の向きに合わせた選択肢を出す', function () {
+  var words = makeWords(10);
+  var session = new Study.StudySession({ words: [words[0]], direction: 'meaning-first' });
+  var quiz = Study.makeChoices(session.cards[0], words.slice(1));
+
+  assert.strictEqual(quiz.correct, words[0].term, '意味 → 単語 では単語が答えになる');
+  quiz.choices.forEach(function (choice) {
+    assert.ok(choice.indexOf('term') === 0, '選択肢が単語になっていない: ' + choice);
+  });
+});
+
+test('候補が足りないときは選択肢を減らして返す', function () {
+  var words = makeWords(2);
+  var session = new Study.StudySession({ words: [words[0]] });
+  var quiz = Study.makeChoices(session.cards[0], words.slice(1));
+
+  assert.strictEqual(quiz.choices.length, 2);
+  assert.ok(quiz.answerIndex >= 0);
+});
+
+test('weakWords は間違えたことがある未学習の単語だけを返す', function () {
+  var words = makeWords(4);
+  var progress = {
+    w0: { correct: 1, wrong: 3, learned: false },  // 苦手
+    w1: { correct: 5, wrong: 2, learned: true },   // 学習済みなので除外
+    w2: { correct: 0, wrong: 0, learned: false }   // 間違えていないので除外
+  };
+
+  var weak = Study.weakWords(words, progress);
+  assert.deepStrictEqual(weak.map(function (w) { return w.id; }), ['w0']);
+});
+
+test('連続学習日数は翌日なら加算、間が空けばリセットされる', function () {
+  var stats = { streakDays: 0, bestStreakDays: 0, lastStudyDate: null };
+
+  Storage.touchStreak(stats, '2026-08-05');
+  assert.strictEqual(stats.streakDays, 1);
+
+  Storage.touchStreak(stats, '2026-08-05'); // 同じ日は増えない
+  assert.strictEqual(stats.streakDays, 1);
+
+  Storage.touchStreak(stats, '2026-08-06');
+  assert.strictEqual(stats.streakDays, 2);
+
+  Storage.touchStreak(stats, '2026-08-09'); // 3 日空いた
+  assert.strictEqual(stats.streakDays, 1);
+  assert.strictEqual(stats.bestStreakDays, 2);
+});
+
+test('withCustom は自作単語を単語帳に合流させる', function () {
+  var decks = Decks.withCustom({ en: [{ term: 'serendipity', meaning: '偶然の幸運' }] });
+  var en = decks.filter(function (d) { return d.id === 'en'; })[0];
+  var added = en.words.filter(function (w) { return w.term === 'serendipity'; })[0];
+
+  assert.ok(added, '自作単語が合流していない');
+  assert.strictEqual(added.custom, true);
+  assert.strictEqual(added.id, 'en:serendipity');
+  assert.strictEqual(en.words.length, Decks.getDeck('en').words.length + 1);
+  assert.strictEqual(Decks.getDeck('en').words.length, 60, '元の単語帳は変更されない');
+});
+
+test('withCustom は既存の単語と重複する自作単語を無視する', function () {
+  var decks = Decks.withCustom({ en: [{ term: 'effort', meaning: '重複' }] });
+  var en = decks.filter(function (d) { return d.id === 'en'; })[0];
+  var hits = en.words.filter(function (w) { return w.term === 'effort'; });
+
+  assert.strictEqual(hits.length, 1);
+  assert.strictEqual(hits[0].meaning, '努力');
+});
+
+test('設定は新しい項目も含めて補正される', function () {
+  var settings = Storage.normalizeSettings({ mode: 'bogus', theme: 'bogus', speech: false });
+  assert.strictEqual(settings.mode, 'flashcard');
+  assert.strictEqual(settings.theme, 'auto');
+  assert.strictEqual(settings.speech, false);
+  assert.strictEqual(Storage.normalizeSettings({}).speech, true);
+});
+
+test('単語帳には言語コードと読み上げ用のロケールがある', function () {
+  Decks.DECKS.forEach(function (deck) {
+    assert.match(deck.code, /^[A-Z]{2}$/, deck.name + ' の code が不正');
+    assert.match(deck.lang, /^[a-z]{2}-[A-Z]{2}$/, deck.name + ' の lang が不正');
+  });
+});
+
 test('単語帳のデータが揃っていて ID が一意である', function () {
   var seen = new Set();
   assert.ok(Decks.DECKS.length > 0);

@@ -12,6 +12,8 @@
   var DECKS = [
     {
       id: 'en',
+      code: 'EN',
+      lang: 'en-US',
       name: '英語',
       emoji: '🇬🇧',
       words: [
@@ -79,6 +81,8 @@
     },
     {
       id: 'es',
+      code: 'ES',
+      lang: 'es-ES',
       name: 'スペイン語',
       emoji: '🇪🇸',
       words: [
@@ -126,6 +130,8 @@
     },
     {
       id: 'fr',
+      code: 'FR',
+      lang: 'fr-FR',
       name: 'フランス語',
       emoji: '🇫🇷',
       words: [
@@ -173,6 +179,8 @@
     },
     {
       id: 'de',
+      code: 'DE',
+      lang: 'de-DE',
       name: 'ドイツ語',
       emoji: '🇩🇪',
       words: [
@@ -220,6 +228,8 @@
     },
     {
       id: 'ko',
+      code: 'KO',
+      lang: 'ko-KR',
       name: '韓国語',
       emoji: '🇰🇷',
       words: [
@@ -267,6 +277,8 @@
     },
     {
       id: 'zh',
+      code: 'ZH',
+      lang: 'zh-CN',
       name: '中国語',
       emoji: '🇨🇳',
       words: [
@@ -315,10 +327,20 @@
   ];
 
   // term から安定した ID を作る（並び替えても進捗が壊れない）
+  function decorate(deck, word, isCustom) {
+    return {
+      id: deck.id + ':' + word.term,
+      deckId: deck.id,
+      term: word.term,
+      reading: word.reading || '',
+      meaning: word.meaning,
+      custom: isCustom === true
+    };
+  }
+
   DECKS.forEach(function (deck) {
-    deck.words.forEach(function (word) {
-      word.id = deck.id + ':' + word.term;
-      word.deckId = deck.id;
+    deck.words = deck.words.map(function (word) {
+      return decorate(deck, word, false);
     });
   });
 
@@ -328,7 +350,36 @@
     })[0] || null;
   }
 
-  var api = { DECKS: DECKS, getDeck: getDeck };
+  /**
+   * 収録単語に自作単語を足したデッキ一覧を返す。
+   * @param {Object} customMap { [deckId]: [{term, reading, meaning}] }
+   */
+  function withCustom(customMap) {
+    var custom = customMap || {};
+    return DECKS.map(function (deck) {
+      var extra = (custom[deck.id] || [])
+        .filter(function (word) { return word && word.term && word.meaning; })
+        .map(function (word) { return decorate(deck, word, true); });
+
+      var seen = {};
+      var words = deck.words.concat(extra).filter(function (word) {
+        if (seen[word.id]) return false;
+        seen[word.id] = true;
+        return true;
+      });
+
+      return {
+        id: deck.id,
+        code: deck.code,
+        lang: deck.lang,
+        name: deck.name,
+        emoji: deck.emoji,
+        words: words
+      };
+    });
+  }
+
+  var api = { DECKS: DECKS, getDeck: getDeck, withCustom: withCustom };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
