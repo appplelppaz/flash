@@ -104,28 +104,46 @@ test('未回答のカードがある間は current() が値を返す', function 
   assert.strictEqual(session.currentSteps(), null);
 });
 
-test('カードは 単語 → 日本語訳 → 例文 → 例文の訳 の順で提示される', function () {
+test('カードは 単語 → 日本語訳 → 例文 の順で表示される（例文の訳は表示しない）', function () {
   var words = [{
     id: 'x', term: 'effort', reading: 'ˈefərt', meaning: '努力',
     example: 'It took a lot of effort to finish.', exampleJa: '終わらせるのに多くの努力が必要だった。'
   }];
   var steps = new Study.StudySession({ words: words, direction: 'term-first' }).currentSteps();
 
-  assert.deepStrictEqual(steps.map(function (s) { return s.key; }),
-    ['term', 'meaning', 'example', 'exampleJa']);
+  assert.deepStrictEqual(steps.map(function (s) { return s.key; }), ['term', 'meaning', 'example']);
   assert.deepStrictEqual(steps.map(function (s) { return s.text; }),
-    ['effort', '努力', 'It took a lot of effort to finish.', '終わらせるのに多くの努力が必要だった。']);
+    ['effort', '努力', 'It took a lot of effort to finish.']);
   assert.strictEqual(steps[0].reading, 'ˈefərt');
-  // 読み上げ対象は単語と例文だけ
-  assert.deepStrictEqual(steps.map(function (s) { return s.target; }), [true, false, true, false]);
+  steps.forEach(function (step) {
+    assert.notStrictEqual(step.text, '終わらせるのに多くの努力が必要だった。', '例文の訳は表示しない');
+  });
+});
+
+test('読み上げは 単語 → 日本語訳 → 例文 → 例文の訳 → 例文 の順になる', function () {
+  var words = [{
+    id: 'x', term: 'effort', meaning: '努力',
+    example: 'It took a lot of effort to finish.', exampleJa: '終わらせるのに多くの努力が必要だった。'
+  }];
+  var steps = new Study.StudySession({ words: words, direction: 'term-first' }).currentSteps();
+
+  var spoken = steps.reduce(function (all, step) { return all.concat(step.speech); }, []);
+  assert.deepStrictEqual(spoken.map(function (s) { return s.text; }), [
+    'effort',
+    '努力',
+    'It took a lot of effort to finish.',
+    '終わらせるのに多くの努力が必要だった。',
+    'It took a lot of effort to finish.'
+  ]);
+  // 日本語訳と例文の訳だけが日本語で読まれる
+  assert.deepStrictEqual(spoken.map(function (s) { return s.ja; }), [false, true, false, true, false]);
 });
 
 test('意味 → 単語 の設定では最初の 2 段階が入れ替わる', function () {
   var words = [{ id: 'x', term: 'effort', meaning: '努力', example: 'Nice effort.', exampleJa: 'よい努力だ。' }];
   var steps = new Study.StudySession({ words: words, direction: 'meaning-first' }).currentSteps();
 
-  assert.deepStrictEqual(steps.map(function (s) { return s.key; }),
-    ['meaning', 'term', 'example', 'exampleJa']);
+  assert.deepStrictEqual(steps.map(function (s) { return s.key; }), ['meaning', 'term', 'example']);
 });
 
 test('例文が無い単語では例文の段階が省かれる', function () {
@@ -133,6 +151,15 @@ test('例文が無い単語では例文の段階が省かれる', function () {
   var steps = new Study.StudySession({ words: words }).currentSteps();
 
   assert.deepStrictEqual(steps.map(function (s) { return s.key; }), ['term', 'meaning']);
+});
+
+test('例文の訳が無ければ例文は 1 回だけ読み上げる', function () {
+  var words = [{ id: 'x', term: 'effort', meaning: '努力', example: 'Nice effort.' }];
+  var steps = new Study.StudySession({ words: words }).currentSteps();
+  var example = steps[steps.length - 1];
+
+  assert.strictEqual(example.key, 'example');
+  assert.deepStrictEqual(example.speech.map(function (s) { return s.text; }), ['Nice effort.']);
 });
 
 test('skip は判定せずにカードを後ろへまわす', function () {
