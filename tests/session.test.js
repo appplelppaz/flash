@@ -101,19 +101,52 @@ test('未回答のカードがある間は current() が値を返す', function 
   assert.ok(session.current());
   session.answer(true);
   assert.strictEqual(session.current(), null);
-  assert.strictEqual(session.currentFace(), null);
+  assert.strictEqual(session.currentSteps(), null);
 });
 
-test('出題方向の設定が表裏に反映される', function () {
-  var words = [{ id: 'x', term: 'apple', meaning: 'りんご', reading: 'ˈæpl' }];
+test('カードは 単語 → 日本語訳 → 例文 → 例文の訳 の順で提示される', function () {
+  var words = [{
+    id: 'x', term: 'effort', reading: 'ˈefərt', meaning: '努力',
+    example: 'It took a lot of effort to finish.', exampleJa: '終わらせるのに多くの努力が必要だった。'
+  }];
+  var steps = new Study.StudySession({ words: words, direction: 'term-first' }).currentSteps();
 
-  var forward = new Study.StudySession({ words: words, direction: 'term-first' }).currentFace();
-  assert.strictEqual(forward.question, 'apple');
-  assert.strictEqual(forward.answer, 'りんご');
+  assert.deepStrictEqual(steps.map(function (s) { return s.key; }),
+    ['term', 'meaning', 'example', 'exampleJa']);
+  assert.deepStrictEqual(steps.map(function (s) { return s.text; }),
+    ['effort', '努力', 'It took a lot of effort to finish.', '終わらせるのに多くの努力が必要だった。']);
+  assert.strictEqual(steps[0].reading, 'ˈefərt');
+  // 読み上げ対象は単語と例文だけ
+  assert.deepStrictEqual(steps.map(function (s) { return s.target; }), [true, false, true, false]);
+});
 
-  var reverse = new Study.StudySession({ words: words, direction: 'meaning-first' }).currentFace();
-  assert.strictEqual(reverse.question, 'りんご');
-  assert.strictEqual(reverse.answer, 'apple');
+test('意味 → 単語 の設定では最初の 2 段階が入れ替わる', function () {
+  var words = [{ id: 'x', term: 'effort', meaning: '努力', example: 'Nice effort.', exampleJa: 'よい努力だ。' }];
+  var steps = new Study.StudySession({ words: words, direction: 'meaning-first' }).currentSteps();
+
+  assert.deepStrictEqual(steps.map(function (s) { return s.key; }),
+    ['meaning', 'term', 'example', 'exampleJa']);
+});
+
+test('例文が無い単語では例文の段階が省かれる', function () {
+  var words = [{ id: 'x', term: 'effort', meaning: '努力' }];
+  var steps = new Study.StudySession({ words: words }).currentSteps();
+
+  assert.deepStrictEqual(steps.map(function (s) { return s.key; }), ['term', 'meaning']);
+});
+
+test('skip は判定せずにカードを後ろへまわす', function () {
+  var session = new Study.StudySession({ words: makeWords(3), requiredStreak: 2 });
+  var first = session.current();
+
+  session.skip();
+  assert.notStrictEqual(session.current(), first, '次のカードに進んでいない');
+  assert.strictEqual(session.answeredCount, 0, '解答数に数えてはいけない');
+  assert.strictEqual(session.correctCount, 0);
+  assert.strictEqual(first.streak, 0);
+  assert.strictEqual(session.learnedCount(), 0);
+  assert.strictEqual(session.queue.length, 3, 'カードはキューに残る');
+  assert.strictEqual(session.isComplete(), false);
 });
 
 test('stats は正答率と学習済み数を集計する', function () {
@@ -141,6 +174,106 @@ test('設定は範囲外の値を補正する', function () {
   assert.strictEqual(Storage.normalizeSettings({ wordCount: 'abc' }).wordCount, 20);
   assert.strictEqual(Storage.normalizeSettings({ requiredStreak: 99 }).requiredStreak, 10);
   assert.strictEqual(Storage.normalizeSettings({ direction: 'bogus' }).direction, 'term-first');
+});
+
+test('weakWords は間違えたことがある未学習の単語だけを返す', function () {
+  var words = makeWords(4);
+  var progress = {
+    w0: { correct: 1, wrong: 3, learned: false },  // 苦手
+    w1: { correct: 5, wrong: 2, learned: true },   // 学習済みなので除外
+    w2: { correct: 0, wrong: 0, learned: false }   // 間違えていないので除外
+  };
+
+  var weak = Study.weakWords(words, progress);
+  assert.deepStrictEqual(weak.map(function (w) { return w.id; }), ['w0']);
+});
+
+test('連続学習日数は翌日なら加算、間が空けばリセットされる', function () {
+  var stats = { streakDays: 0, bestStreakDays: 0, lastStudyDate: null };
+
+  Storage.touchStreak(stats, '2026-08-05');
+  assert.strictEqual(stats.streakDays, 1);
+
+  Storage.touchStreak(stats, '2026-08-05'); // 同じ日は増えない
+  assert.strictEqual(stats.streakDays, 1);
+
+  Storage.touchStreak(stats, '2026-08-06');
+  assert.strictEqual(stats.streakDays, 2);
+
+  Storage.touchStreak(stats, '2026-08-09'); // 3 日空いた
+  assert.strictEqual(stats.streakDays, 1);
+  assert.strictEqual(stats.bestStreakDays, 2);
+});
+
+test('withCustom は自作単語を単語帳に合流させる', function () {
+  var decks = Decks.withCustom({ en: [{ term: 'serendipity', meaning: '偶然の幸運' }] });
+  var en = decks.filter(function (d) { return d.id === 'en'; })[0];
+  var added = en.words.filter(function (w) { return w.term === 'serendipity'; })[0];
+
+  assert.ok(added, '自作単語が合流していない');
+  assert.strictEqual(added.custom, true);
+  assert.strictEqual(added.id, 'en:serendipity');
+  assert.strictEqual(en.words.length, Decks.getDeck('en').words.length + 1);
+  assert.strictEqual(Decks.getDeck('en').words.length, 60, '元の単語帳は変更されない');
+});
+
+test('withCustom は既存の単語と重複する自作単語を無視する', function () {
+  var decks = Decks.withCustom({ en: [{ term: 'effort', meaning: '重複' }] });
+  var en = decks.filter(function (d) { return d.id === 'en'; })[0];
+  var hits = en.words.filter(function (w) { return w.term === 'effort'; });
+
+  assert.strictEqual(hits.length, 1);
+  assert.strictEqual(hits[0].meaning, '努力');
+});
+
+test('自動再生・自動めくりの設定が補正される', function () {
+  var settings = Storage.normalizeSettings({ theme: 'bogus', speech: false, autoAdvance: false, autoSeconds: 99 });
+  assert.strictEqual(settings.theme, 'auto');
+  assert.strictEqual(settings.speech, false);
+  assert.strictEqual(settings.autoAdvance, false);
+  assert.strictEqual(settings.autoSeconds, 20);
+
+  var defaults = Storage.normalizeSettings({});
+  assert.strictEqual(defaults.speech, true, '読み上げの自動再生は既定でオン');
+  assert.strictEqual(defaults.autoAdvance, true, '自動めくりは既定でオン');
+  assert.strictEqual(defaults.autoSeconds, 4);
+});
+
+test('収録言語は 英語・中国語・スペイン語・フランス語 の 4 つ', function () {
+  assert.deepStrictEqual(Decks.DECKS.map(function (d) { return d.id; }), ['en', 'zh', 'es', 'fr']);
+  assert.deepStrictEqual(Decks.DECKS.map(function (d) { return d.name; }),
+    ['英語', '中国語', 'スペイン語', 'フランス語']);
+});
+
+test('すべての単語に例文と例文の日本語訳がある', function () {
+  Decks.DECKS.forEach(function (deck) {
+    deck.words.forEach(function (word) {
+      assert.ok(word.example, deck.name + ' の ' + word.term + ' に例文が無い');
+      assert.ok(word.exampleJa, deck.name + ' の ' + word.term + ' に例文の訳が無い');
+    });
+  });
+});
+
+test('例文にはその単語が含まれている', function () {
+  // 中国語は活用が無いのでそのまま、英語は活用を考慮して語幹（先頭 4 文字）で照合する。
+  // スペイン語・フランス語は不規則活用（querer → quiero など）があるため対象外。
+  Decks.getDeck('zh').words.forEach(function (word) {
+    assert.ok(word.example.indexOf(word.term) >= 0,
+      '中国語の ' + word.term + ' の例文に単語が含まれていない');
+  });
+
+  Decks.getDeck('en').words.forEach(function (word) {
+    var stem = word.term.slice(0, 4).toLowerCase();
+    assert.ok(word.example.toLowerCase().indexOf(stem) >= 0,
+      '英語の ' + word.term + ' の例文に単語が含まれていない: ' + word.example);
+  });
+});
+
+test('単語帳には言語コードと読み上げ用のロケールがある', function () {
+  Decks.DECKS.forEach(function (deck) {
+    assert.match(deck.code, /^[A-Z]{2}$/, deck.name + ' の code が不正');
+    assert.match(deck.lang, /^[a-z]{2}-[A-Z]{2}$/, deck.name + ' の lang が不正');
+  });
 });
 
 test('単語帳のデータが揃っていて ID が一意である', function () {
