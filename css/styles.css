@@ -581,7 +581,6 @@ kbd {
 
 .card-step[data-key="meaning"] .step-text { font-size: 1.3rem; font-weight: 600; }
 .card-step[data-key="example"] .step-text { font-weight: 500; }
-.card-step[data-key="exampleJa"] .step-text { color: var(--muted); font-size: .95rem; }
 
 .card-step .step-reading { margin: 4px 0 0; color: var(--muted); font-size: .85rem; }
 

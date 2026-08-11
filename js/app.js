@@ -91,23 +91,70 @@
 
   // ---------- 読み上げ ----------
 
-  function speak(text, lang) {
-    if (!text || !window.speechSynthesis) return;
-    try {
-      window.speechSynthesis.cancel();
-      var utterance = new window.SpeechSynthesisUtterance(text);
-      utterance.lang = lang || (state.deck && state.deck.lang) || 'en-US';
-      utterance.rate = 0.95;
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      /* 読み上げ非対応の環境では何もしない */
-    }
-  }
+  var speechToken = 0;      // 古い読み上げ列を無効化するための世代番号
+  var speechFallback = null; // onend が来ない環境のための保険
 
   function stopSpeaking() {
+    speechToken++;
+    if (speechFallback) {
+      clearTimeout(speechFallback);
+      speechFallback = null;
+    }
     if (window.speechSynthesis) {
       try { window.speechSynthesis.cancel(); } catch (err) { /* noop */ }
     }
+  }
+
+  /**
+   * 複数の文を順番に読み上げ、すべて終わったら onDone を呼ぶ。
+   * @param {Array} items [{ text, ja }] ja が true なら日本語で読む
+   */
+  function speakSequence(items, onDone) {
+    stopSpeaking();
+    var done = onDone || function () {};
+    var queue = (items || []).filter(function (item) { return item && item.text; });
+
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance || !queue.length) {
+      done();
+      return;
+    }
+
+    var token = speechToken;
+    var index = 0;
+    var finished = false;
+
+    function finish() {
+      if (finished || token !== speechToken) return;
+      finished = true;
+      if (speechFallback) {
+        clearTimeout(speechFallback);
+        speechFallback = null;
+      }
+      done();
+    }
+
+    function next() {
+      if (token !== speechToken) return;
+      if (index >= queue.length) {
+        finish();
+        return;
+      }
+      var item = queue[index++];
+      try {
+        var utterance = new window.SpeechSynthesisUtterance(item.text);
+        utterance.lang = item.ja ? 'ja-JP' : ((state.deck && state.deck.lang) || 'en-US');
+        utterance.rate = 0.95;
+        utterance.onend = next;
+        utterance.onerror = next;
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        next();
+      }
+    }
+
+    // 読み上げが返ってこない環境でも先に進めるようにする
+    speechFallback = setTimeout(finish, 4000 + queue.length * 7000);
+    next();
   }
 
   // ---------- 画面遷移 ----------
@@ -343,13 +390,15 @@
     $('fav-btn').setAttribute('aria-pressed', isFav ? 'true' : 'false');
     $('fav-btn').textContent = (isFav ? '★' : '☆') + ' お気に入り';
 
-    // 自動再生（単語・例文だけを対象言語で読み上げる）
+    // 自動再生。読み上げが終わってから自動めくりの計測を始める
     var step = state.steps[state.stepIndex];
-    if (state.settings.speech && step && step.target) {
-      speak(step.text, state.deck.lang);
+    clearAutoTimer();
+    if (state.settings.speech && step && step.speech) {
+      speakSequence(step.speech, scheduleAuto);
+    } else {
+      stopSpeaking();
+      scheduleAuto();
     }
-
-    scheduleAuto();
   }
 
   // ---------- 自動めくり ----------
@@ -559,7 +608,9 @@
       speakBtn.className = 'row-btn';
       speakBtn.textContent = '🔊';
       speakBtn.setAttribute('aria-label', '読み上げ');
-      speakBtn.addEventListener('click', function () { speak(word.term, state.deck.lang); });
+      speakBtn.addEventListener('click', function () {
+        speakSequence([{ text: word.term, ja: false }]);
+      });
 
       li.appendChild(favBtn);
       li.appendChild(speakBtn);
@@ -754,9 +805,9 @@
     $('speak-btn').addEventListener('click', function () {
       var step = state.steps[state.stepIndex];
       var card = state.session && state.session.current();
-      if (!card) return;
-      // いまの段階が対象言語ならそれを、そうでなければ単語を読み上げる
-      speak(step && step.target ? step.text : card.word.term, state.deck.lang);
+      if (!card || !step) return;
+      // いまの段階の読み上げをやり直す（終わったら自動めくりを測り直す）
+      speakSequence(step.speech || [{ text: card.word.term, ja: false }], scheduleAuto);
     });
 
     $('fav-btn').addEventListener('click', function () {

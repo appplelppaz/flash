@@ -122,9 +122,13 @@
 
   /**
    * 現在のカードを提示する順番で返す。
-   *   単語 → 日本語訳 → その単語を含む例文 → 例文の日本語訳
-   * （出題の向きが「意味 → 単語」のときは最初の 2 つが入れ替わる）
-   * 例文を持たない単語では、その段階は省かれる。
+   *
+   * 画面表示: 単語 → 日本語訳 → その単語を含む例文
+   *   （例文の日本語訳は表示せず、読み上げのみ）
+   * 読み上げ: 単語 → 日本語訳 → 例文 → 例文の日本語訳 → 例文（もう一度）
+   *
+   * 出題の向きが「意味 → 単語」のときは最初の 2 つが入れ替わる。
+   * 例文を持たない単語では、例文の段階は省かれる。
    */
   StudySession.prototype.currentSteps = function () {
     var card = this.current();
@@ -136,18 +140,27 @@
       label: '単語',
       text: word.term,
       reading: word.reading || '',
-      target: true
+      speech: [{ text: word.term, ja: false }]
     };
-    var meaningStep = { key: 'meaning', label: '日本語訳', text: word.meaning, target: false };
+    var meaningStep = {
+      key: 'meaning',
+      label: '日本語訳',
+      text: word.meaning,
+      speech: [{ text: word.meaning, ja: true }]
+    };
 
     var steps = card.askMeaningFirst ? [meaningStep, termStep] : [termStep, meaningStep];
 
     if (word.example) {
-      steps.push({ key: 'example', label: '例文', text: word.example, target: true });
+      var speech = [{ text: word.example, ja: false }];
+      if (word.exampleJa) {
+        // 例文 → 例文の日本語訳 → もう一度 例文
+        speech.push({ text: word.exampleJa, ja: true });
+        speech.push({ text: word.example, ja: false });
+      }
+      steps.push({ key: 'example', label: '例文', text: word.example, speech: speech });
     }
-    if (word.exampleJa) {
-      steps.push({ key: 'exampleJa', label: '例文の訳', text: word.exampleJa, target: false });
-    }
+
     return steps;
   };
 
