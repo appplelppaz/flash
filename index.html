@@ -52,6 +52,12 @@
       <div class="meter"><span id="deck-meter-fill"></span></div>
 
       <div class="block">
+        <label class="block-label" for="list-select">単語リスト</label>
+        <select id="list-select"></select>
+        <p class="hint" id="list-desc"></p>
+      </div>
+
+      <div class="block">
         <p class="block-label">出題する範囲</p>
         <div class="segmented" id="scope-group" role="group">
           <button type="button" data-scope="all" class="seg is-active">すべて</button>
@@ -145,6 +151,7 @@
       </div>
       <p class="hint" id="list-count"></p>
       <ul class="word-list" id="word-list"></ul>
+      <button type="button" class="btn" id="list-more-btn" hidden>さらに表示</button>
       <button type="button" class="btn btn-primary sticky-add" id="add-word-btn">＋ 単語を追加</button>
     </section>
 
@@ -253,6 +260,10 @@
     </section>
   </main>
 
+  <script src="js/data/en-eiken1.js"></script>
+  <script src="js/data/zh-hsk69.js"></script>
+  <script src="js/data/es-vida3000.js"></script>
+  <script src="js/data/fr-vie3000.js"></script>
   <script src="js/decks.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/session.js"></script>

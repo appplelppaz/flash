@@ -280,6 +280,14 @@ main {
 
 .deck-main { display: block; flex: 1; min-width: 0; }
 .deck-name { display: block; font-size: .98rem; font-weight: 600; }
+.deck-list-name {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: .8rem;
+}
 .deck-meta { display: block; margin-top: 1px; color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums; }
 
 .deck-line {

@@ -9,6 +9,7 @@
     progress: 'flashcards.progress.v1',
     favorites: 'flashcards.favorites.v1',
     custom: 'flashcards.custom.v1',
+    lists: 'flashcards.lists.v1',
     stats: 'flashcards.stats.v1'
   };
 
@@ -104,18 +105,41 @@
     return favorites[wordId] === true;
   }
 
+  // ---------- 言語ごとに選ばれている単語リスト ----------
+
+  /** { [deckId]: listId } 選択されていない言語は入っていない */
+  function loadSelectedLists() { return read(KEYS.lists, {}); }
+
+  /**
+   * その言語で選ばれている単語リスト ID を返す。
+   * 未選択・不正な値なら fallback（＝言語の既定リスト）を返す。
+   */
+  function selectedListId(deckId, fallback, available) {
+    var selected = loadSelectedLists()[deckId];
+    if (selected && (!available || available.indexOf(selected) >= 0)) return selected;
+    return fallback || null;
+  }
+
+  function saveSelectedList(deckId, listId) {
+    var all = loadSelectedLists();
+    if (listId) all[deckId] = listId;
+    else delete all[deckId];
+    write(KEYS.lists, all);
+    return all;
+  }
+
   // ---------- 自作単語 ----------
 
   function loadCustomWords() { return read(KEYS.custom, {}); }
 
-  function customWordsFor(deckId) {
+  function customWordsFor(listId) {
     var all = loadCustomWords();
-    return (all[deckId] || []).slice();
+    return (all[listId] || []).slice();
   }
 
-  function saveCustomWord(deckId, word, originalTerm) {
+  function saveCustomWord(listId, word, originalTerm) {
     var all = loadCustomWords();
-    var list = all[deckId] || [];
+    var list = all[listId] || [];
     var entry = {
       term: String(word.term || '').trim(),
       reading: String(word.reading || '').trim(),
@@ -134,19 +158,19 @@
     if (index >= 0) list[index] = entry;
     else list.push(entry);
 
-    all[deckId] = list;
+    all[listId] = list;
     write(KEYS.custom, all);
     return { ok: true, word: entry };
   }
 
-  function deleteCustomWord(deckId, term) {
+  function deleteCustomWord(listId, term) {
     var all = loadCustomWords();
-    var list = all[deckId] || [];
-    all[deckId] = list.filter(function (w) { return w.term !== term; });
+    var list = all[listId] || [];
+    all[listId] = list.filter(function (w) { return w.term !== term; });
     write(KEYS.custom, all);
 
     // 進捗とお気に入りも掃除する
-    var wordId = deckId + ':' + term;
+    var wordId = listId + ':' + term;
     var progress = loadProgress();
     delete progress[wordId];
     saveProgress(progress);
@@ -235,6 +259,7 @@
       progress: loadProgress(),
       favorites: loadFavorites(),
       custom: loadCustomWords(),
+      lists: loadSelectedLists(),
       stats: loadStats()
     };
   }
@@ -245,6 +270,7 @@
     if (data.progress && typeof data.progress === 'object') saveProgress(data.progress);
     if (data.favorites && typeof data.favorites === 'object') write(KEYS.favorites, data.favorites);
     if (data.custom && typeof data.custom === 'object') write(KEYS.custom, data.custom);
+    if (data.lists && typeof data.lists === 'object') write(KEYS.lists, data.lists);
     if (data.stats && typeof data.stats === 'object') write(KEYS.stats, data.stats);
     return { ok: true };
   }
@@ -261,6 +287,9 @@
     loadFavorites: loadFavorites,
     isFavorite: isFavorite,
     toggleFavorite: toggleFavorite,
+    loadSelectedLists: loadSelectedLists,
+    selectedListId: selectedListId,
+    saveSelectedList: saveSelectedList,
     loadCustomWords: loadCustomWords,
     customWordsFor: customWordsFor,
     saveCustomWord: saveCustomWord,

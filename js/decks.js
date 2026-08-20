@@ -1,24 +1,29 @@
 /**
  * 単語帳データ。
  *
+ * 言語（デッキ）は複数の「単語リスト」を持ち、言語ごとに既定のリストが決まっている。
+ *   DECKS      … 言語（en / zh / es / fr）と既定リスト
+ *   BASE_LISTS … このファイルに直接書かれた基本リスト
+ *   js/data/*  … 大きな単語リスト（[term, reading, meaning, example, exampleJa] の配列）
+ *
  * 1 単語は以下の 4 つを持ち、この順番で提示される。
  *   term      … 単語
  *   meaning   … 日本語訳
  *   example   … その単語を含む例文
  *   exampleJa … 例文の日本語訳
  *
- * reading（発音・ピンインなど）は任意。
- * ID は term から自動生成されるため、途中に単語を挿入しても進捗はずれない。
+ * reading（発音・ピンイン・名詞の性など）は任意。
+ * ID は「リスト ID:term」で作られるため、途中に単語を挿入しても進捗はずれない。
  */
 (function (global) {
   'use strict';
 
-  var DECKS = [
+  var BASE_LISTS = [
     {
       id: 'en',
-      code: 'EN',
-      lang: 'en-US',
-      name: '英語',
+      deckId: 'en',
+      name: '基本英単語',
+      description: '日常会話でよく使う基本の英単語（例文つき）',
       words: [
         { term: 'abandon', reading: 'əˈbændən', meaning: '見捨てる、放棄する', example: 'They had to abandon the car in the snow.', exampleJa: '彼らは雪の中に車を置いていくしかなかった。' },
         { term: 'ability', reading: 'əˈbɪləti', meaning: '能力', example: 'She has the ability to solve hard problems.', exampleJa: '彼女は難しい問題を解く能力がある。' },
@@ -84,9 +89,9 @@
     },
     {
       id: 'zh',
-      code: 'ZH',
-      lang: 'zh-CN',
-      name: '中国語',
+      deckId: 'zh',
+      name: '基本中国語',
+      description: '日常会話でよく使う基本の中国語（ピンイン・例文つき）',
       words: [
         { term: '家', reading: 'jiā', meaning: '家', example: '我家离车站很近。', exampleJa: '私の家は駅から近い。' },
         { term: '水', reading: 'shuǐ', meaning: '水', example: '请给我一杯水。', exampleJa: '水を一杯ください。' },
@@ -132,9 +137,9 @@
     },
     {
       id: 'es',
-      code: 'ES',
-      lang: 'es-ES',
-      name: 'スペイン語',
+      deckId: 'es',
+      name: '基本スペイン語',
+      description: '日常会話でよく使う基本のスペイン語（例文つき）',
       words: [
         { term: 'la casa', meaning: '家', example: 'Mi casa está cerca de la estación.', exampleJa: '私の家は駅の近くにある。' },
         { term: 'el agua', meaning: '水', example: '¿Puedes traerme un vaso de agua?', exampleJa: '水を一杯持ってきてくれる？' },
@@ -180,9 +185,9 @@
     },
     {
       id: 'fr',
-      code: 'FR',
-      lang: 'fr-FR',
-      name: 'フランス語',
+      deckId: 'fr',
+      name: '基本フランス語',
+      description: '日常会話でよく使う基本のフランス語（例文つき）',
       words: [
         { term: 'la maison', meaning: '家', example: 'Ma maison est près de la gare.', exampleJa: '私の家は駅の近くにある。' },
         { term: "l'eau", reading: 'f.', meaning: '水', example: "Je voudrais un verre d'eau.", exampleJa: '水を一杯ください。' },
@@ -228,10 +233,48 @@
     }
   ];
 
-  function decorate(deck, word, isCustom) {
+
+  var DECKS = [
+    { id: 'en', code: 'EN', lang: 'en-US', name: '英語', defaultListId: 'en-eiken1' },
+    { id: 'zh', code: 'ZH', lang: 'zh-CN', name: '中国語', defaultListId: 'zh-hsk69' },
+    { id: 'es', code: 'ES', lang: 'es-ES', name: 'スペイン語', defaultListId: 'es-vida3000' },
+    { id: 'fr', code: 'FR', lang: 'fr-FR', name: 'フランス語', defaultListId: 'fr-vie3000' }
+  ];
+
+  // js/data/*.js で定義される大きな単語リスト。
+  // ブラウザでは各ファイルが global.WordLists に自分を登録する。
+  var EXTRA_LIST_IDS = ['en-eiken1', 'zh-hsk69', 'es-vida3000', 'fr-vie3000'];
+
+  function loadExtraLists() {
+    if (typeof module !== 'undefined' && module.exports) {
+      return EXTRA_LIST_IDS.map(function (id) { return require('./data/' + id + '.js'); });
+    }
+    var registry = global.WordLists || {};
+    return EXTRA_LIST_IDS
+      .map(function (id) { return registry[id]; })
+      .filter(function (list) { return !!list; });
+  }
+
+  /** 大きなリストは [term, reading, meaning, example, exampleJa] の配列で書かれている */
+  function toWord(entry) {
+    if (Object.prototype.toString.call(entry) === '[object Array]') {
+      return {
+        term: entry[0],
+        reading: entry[1],
+        meaning: entry[2],
+        example: entry[3],
+        exampleJa: entry[4]
+      };
+    }
+    return entry;
+  }
+
+  function decorate(list, entry, isCustom) {
+    var word = toWord(entry);
     return {
-      id: deck.id + ':' + word.term,
-      deckId: deck.id,
+      id: list.id + ':' + word.term,
+      deckId: list.deckId,
+      listId: list.id,
       term: word.term,
       reading: word.reading || '',
       meaning: word.meaning,
@@ -241,47 +284,105 @@
     };
   }
 
+  function buildList(list) {
+    return {
+      id: list.id,
+      deckId: list.deckId,
+      name: list.name,
+      description: list.description || '',
+      words: (list.words || []).map(function (entry) { return decorate(list, entry, false); })
+    };
+  }
+
+  var LISTS = BASE_LISTS.concat(loadExtraLists()).map(buildList);
+
   DECKS.forEach(function (deck) {
-    deck.words = deck.words.map(function (word) {
-      return decorate(deck, word, false);
+    var lists = LISTS.filter(function (list) { return list.deckId === deck.id; });
+    if (!lists.length) {
+      deck.lists = [];
+      deck.defaultListId = null;
+      return;
+    }
+    if (!lists.some(function (list) { return list.id === deck.defaultListId; })) {
+      deck.defaultListId = lists[0].id;
+    }
+    // 既定のリストを先頭に並べる
+    var defaultId = deck.defaultListId;
+    deck.lists = lists.slice().sort(function (a, b) {
+      return (a.id === defaultId ? 0 : 1) - (b.id === defaultId ? 0 : 1);
     });
   });
 
   function getDeck(deckId) {
-    return DECKS.filter(function (deck) {
-      return deck.id === deckId;
-    })[0] || null;
+    return DECKS.filter(function (deck) { return deck.id === deckId; })[0] || null;
+  }
+
+  function getList(listId) {
+    return LISTS.filter(function (list) { return list.id === listId; })[0] || null;
+  }
+
+  /** リスト ID からその言語（デッキ）を返す */
+  function deckOfList(listId) {
+    var list = getList(listId);
+    return list ? getDeck(list.deckId) : null;
+  }
+
+  /** 言語の既定リスト ID。存在しない言語なら null */
+  function defaultListId(deckId) {
+    var deck = getDeck(deckId);
+    return deck ? deck.defaultListId : null;
   }
 
   /**
-   * 収録単語に自作単語を足したデッキ一覧を返す。
-   * @param {Object} customMap { [deckId]: [{term, reading, meaning, example, exampleJa}] }
+   * 収録単語に自作単語を足したリストを返す。
+   * @param {string} listId
+   * @param {Object} customMap { [listId]: [{term, reading, meaning, example, exampleJa}] }
+   */
+  function listWithCustom(listId, customMap) {
+    var list = getList(listId);
+    if (!list) return null;
+
+    var extra = ((customMap || {})[listId] || [])
+      .filter(function (word) { return word && word.term && word.meaning; })
+      .map(function (word) { return decorate(list, word, true); });
+
+    var seen = {};
+    var words = list.words.concat(extra).filter(function (word) {
+      if (seen[word.id]) return false;
+      seen[word.id] = true;
+      return true;
+    });
+
+    return { id: list.id, deckId: list.deckId, name: list.name, description: list.description, words: words };
+  }
+
+  /**
+   * 自作単語を合流させたデッキ一覧（各デッキは lists を持つ）を返す。
+   * @param {Object} customMap { [listId]: [...] }
    */
   function withCustom(customMap) {
-    var custom = customMap || {};
     return DECKS.map(function (deck) {
-      var extra = (custom[deck.id] || [])
-        .filter(function (word) { return word && word.term && word.meaning; })
-        .map(function (word) { return decorate(deck, word, true); });
-
-      var seen = {};
-      var words = deck.words.concat(extra).filter(function (word) {
-        if (seen[word.id]) return false;
-        seen[word.id] = true;
-        return true;
-      });
-
       return {
         id: deck.id,
         code: deck.code,
         lang: deck.lang,
         name: deck.name,
-        words: words
+        defaultListId: deck.defaultListId,
+        lists: deck.lists.map(function (list) { return listWithCustom(list.id, customMap); })
       };
     });
   }
 
-  var api = { DECKS: DECKS, getDeck: getDeck, withCustom: withCustom };
+  var api = {
+    DECKS: DECKS,
+    LISTS: LISTS,
+    getDeck: getDeck,
+    getList: getList,
+    deckOfList: deckOfList,
+    defaultListId: defaultListId,
+    listWithCustom: listWithCustom,
+    withCustom: withCustom
+  };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

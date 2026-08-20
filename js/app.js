@@ -34,6 +34,7 @@
     settings: Storage.loadSettings(),
     decks: [],
     deck: null,
+    list: null,
     session: null,
     steps: [],
     stepIndex: 0,
@@ -42,29 +43,45 @@
     scope: 'all',
     filter: 'all',
     query: '',
-    editing: null // { deckId, term } 編集中の自作単語
+    editing: null, // { listId, term } 編集中の自作単語
+    listLimit: 0   // 単語一覧で表示している件数
   };
 
   // ---------- 共通ユーティリティ ----------
+
+  var LIST_PAGE = 200; // 単語一覧は 200 語ずつ描画する（3000 語のリストでも重くならないように）
 
   function refreshDecks() {
     state.decks = Decks.withCustom(Storage.loadCustomWords());
     if (state.deck) {
       state.deck = state.decks.filter(function (d) { return d.id === state.deck.id; })[0] || null;
     }
+    if (state.deck) state.list = selectedList(state.deck, state.list && state.list.id);
+    else state.list = null;
   }
 
-  function deckStats(deck, progress) {
+  /** その言語で選ばれている単語リスト（未選択なら既定のリスト） */
+  function selectedList(deck, preferredId) {
+    if (!deck || !deck.lists.length) return null;
+    var ids = deck.lists.map(function (list) { return list.id; });
+    var wanted = preferredId && ids.indexOf(preferredId) >= 0
+      ? preferredId
+      : Storage.selectedListId(deck.id, deck.defaultListId, ids);
+    return deck.lists.filter(function (list) { return list.id === wanted; })[0] || deck.lists[0];
+  }
+
+  function listStats(list, progress) {
     var stats = progress || Storage.loadProgress();
     var learned = 0;
     var weak = 0;
-    deck.words.forEach(function (word) {
+    if (!list) return { total: 0, learned: 0, weak: 0 };
+    list.words.forEach(function (word) {
       var stat = stats[word.id];
       if (!stat) return;
       if (stat.learned) learned++;
       else if (stat.wrong > 0) weak++;
     });
-    return { total: deck.words.length, learned: learned, weak: weak };
+    return { total: list.words.length, learned: learned, weak: weak };
   }
 
   function applyTheme() {
@@ -213,7 +230,9 @@
 
     var learnedTotal = 0;
     state.decks.forEach(function (deck) {
-      learnedTotal += deckStats(deck, progress).learned;
+      deck.lists.forEach(function (list) {
+        learnedTotal += listStats(list, progress).learned;
+      });
     });
 
     $('stat-learned').textContent = learnedTotal;
@@ -227,7 +246,8 @@
     list.innerHTML = '';
 
     state.decks.forEach(function (deck) {
-      var stat = deckStats(deck, progress);
+      var current = selectedList(deck);
+      var stat = listStats(current, progress);
       var percent = stat.total ? Math.round((stat.learned / stat.total) * 100) : 0;
 
       var li = document.createElement('li');
@@ -238,6 +258,7 @@
         '<span class="code-chip">' + deck.code + '</span>' +
         '<span class="deck-main">' +
           '<span class="deck-name">' + deck.name + '</span>' +
+          '<span class="deck-list-name">' + escapeHtml(current ? current.name : 'リストがありません') + '</span>' +
           '<span class="deck-meta">' + stat.total + ' 語 · 学習済み ' + stat.learned + ' · ' + percent + '%</span>' +
           '<span class="deck-line"><span style="width:' + percent + '%"></span></span>' +
         '</span>' +
@@ -254,34 +275,47 @@
     refreshDecks();
     state.deck = state.decks.filter(function (d) { return d.id === deckId; })[0] || null;
     if (!state.deck) return;
+    state.list = selectedList(state.deck);
     state.scope = 'all';
-    $('deck-word-count').value = Math.min(state.settings.wordCount, state.deck.words.length);
+    $('deck-word-count').value = Math.min(state.settings.wordCount, state.list ? state.list.words.length : 1);
     renderDeck();
     showScreen('deck');
   }
 
+  /** 単語リストを切り替えて、その言語の選択として保存する */
+  function selectList(listId) {
+    if (!state.deck) return;
+    Storage.saveSelectedList(state.deck.id, listId);
+    state.list = selectedList(state.deck, listId);
+    state.scope = 'all';
+    $('deck-word-count').value = Math.min(state.settings.wordCount, state.list ? state.list.words.length : 1);
+    renderDeck();
+  }
+
   function scopeWords() {
-    var deck = state.deck;
-    if (!deck) return [];
-    if (state.scope === 'weak') return Study.weakWords(deck.words, Storage.loadProgress());
+    var list = state.list;
+    if (!list) return [];
+    if (state.scope === 'weak') return Study.weakWords(list.words, Storage.loadProgress());
     if (state.scope === 'fav') {
       var favorites = Storage.loadFavorites();
-      return deck.words.filter(function (word) { return favorites[word.id]; });
+      return list.words.filter(function (word) { return favorites[word.id]; });
     }
-    return deck.words;
+    return list.words;
   }
 
   function renderDeck() {
     var deck = state.deck;
     if (!deck) return;
 
-    var stat = deckStats(deck);
+    var stat = listStats(state.list);
     var percent = stat.total ? (stat.learned / stat.total) * 100 : 0;
 
     $('deck-code').textContent = deck.code;
     $('deck-name').textContent = deck.name;
     $('deck-sub').textContent = stat.learned + ' / ' + stat.total + ' 語 学習済み';
     $('deck-meter-fill').style.width = percent + '%';
+
+    renderListSelect(deck);
 
     Array.prototype.forEach.call($('scope-group').children, function (button) {
       button.classList.toggle('is-active', button.dataset.scope === state.scope);
@@ -305,6 +339,22 @@
 
     $('start-btn').disabled = available === 0;
     $('start-btn').textContent = available === 0 ? '対象の単語がありません' : '学習を開始';
+  }
+
+  /** 単語リストの選択欄。既定のリストには「既定」を付ける */
+  function renderListSelect(deck) {
+    var select = $('list-select');
+    select.innerHTML = '';
+    deck.lists.forEach(function (list) {
+      var option = document.createElement('option');
+      option.value = list.id;
+      option.textContent = list.name + '（' + list.words.length + ' 語）' +
+        (list.id === deck.defaultListId ? ' · 既定' : '');
+      select.appendChild(option);
+    });
+    select.value = state.list ? state.list.id : '';
+    select.disabled = deck.lists.length < 2;
+    $('list-desc').textContent = state.list ? state.list.description : '';
   }
 
   function deckCount() {
@@ -514,7 +564,8 @@
     var stats = session.stats();
     var saved = Storage.recordSession(session.cards, stats);
 
-    $('result-sub').textContent = state.deck.name + ' · ' + SCOPE_LABELS[state.scope];
+    $('result-sub').textContent = (state.list ? state.list.name : state.deck.name) +
+      ' · ' + SCOPE_LABELS[state.scope];
     $('result-total').textContent = stats.learned + ' / ' + stats.total + ' 語';
     $('result-answered').textContent = stats.answered + ' 回';
     $('result-accuracy').textContent = Math.round(stats.accuracy * 100) + '%';
@@ -530,19 +581,20 @@
   function openList() {
     state.query = '';
     state.filter = 'all';
+    state.listLimit = LIST_PAGE;
     $('search-input').value = '';
     renderList();
     showScreen('list');
   }
 
   function visibleWords() {
-    var deck = state.deck;
-    if (!deck) return [];
+    var list = state.list;
+    if (!list) return [];
     var progress = Storage.loadProgress();
     var favorites = Storage.loadFavorites();
     var query = state.query.trim().toLowerCase();
 
-    return deck.words.filter(function (word) {
+    return list.words.filter(function (word) {
       var stat = progress[word.id] || { correct: 0, wrong: 0, learned: false };
       if (state.filter === 'learned' && !stat.learned) return false;
       if (state.filter === 'unlearned' && stat.learned) return false;
@@ -555,7 +607,7 @@
   }
 
   function renderList() {
-    if (!state.deck) return;
+    if (!state.list) return;
     var progress = Storage.loadProgress();
     var favorites = Storage.loadFavorites();
     var words = visibleWords();
@@ -565,7 +617,13 @@
     Array.prototype.forEach.call($('filter-chips').children, function (chip) {
       chip.classList.toggle('is-active', chip.dataset.filter === state.filter);
     });
-    $('list-count').textContent = state.deck.name + ' · ' + words.length + ' 語を表示中';
+
+    if (!state.listLimit) state.listLimit = LIST_PAGE;
+    var shown = words.slice(0, state.listLimit);
+    $('list-count').textContent = state.list.name + ' · ' + words.length + ' 語' +
+      (shown.length < words.length ? '（' + shown.length + ' 語を表示中）' : '');
+    $('list-more-btn').hidden = shown.length >= words.length;
+    $('list-more-btn').textContent = 'さらに表示（残り ' + (words.length - shown.length) + ' 語）';
 
     if (!words.length) {
       var empty = document.createElement('li');
@@ -575,7 +633,7 @@
       return;
     }
 
-    words.forEach(function (word) {
+    shown.forEach(function (word) {
       var stat = progress[word.id] || { correct: 0, wrong: 0, learned: false };
       var stateClass = stat.learned ? 'is-learned' : (stat.wrong > 0 ? 'is-weak' : '');
       var isFav = favorites[word.id] === true;
@@ -632,7 +690,7 @@
   // ---------- 単語の追加・編集 ----------
 
   function openEditor(word) {
-    state.editing = word ? { deckId: word.deckId, term: word.term } : null;
+    state.editing = word ? { listId: word.listId, term: word.term } : null;
     $('edit-title').textContent = word ? '単語を編集' : '単語を追加';
     $('edit-term').value = word ? word.term : '';
     $('edit-reading').value = word ? (word.reading || '') : '';
@@ -646,7 +704,8 @@
   }
 
   function saveWord() {
-    var result = Storage.saveCustomWord(state.deck.id, {
+    if (!state.list) return;
+    var result = Storage.saveCustomWord(state.list.id, {
       term: $('edit-term').value,
       reading: $('edit-reading').value,
       meaning: $('edit-meaning').value,
@@ -671,7 +730,7 @@
   function deleteWord() {
     if (!state.editing) return;
     if (!window.confirm('「' + state.editing.term + '」を削除しますか？')) return;
-    Storage.deleteCustomWord(state.editing.deckId, state.editing.term);
+    Storage.deleteCustomWord(state.editing.listId, state.editing.term);
     refreshDecks();
     state.editing = null;
     renderList();
@@ -760,6 +819,10 @@
     $('settings-done-btn').addEventListener('click', goBack);
 
     // デッキ画面
+    $('list-select').addEventListener('change', function (event) {
+      selectList(event.target.value);
+    });
+
     $('scope-group').addEventListener('click', function (event) {
       var button = event.target.closest('[data-scope]');
       if (!button) return;
@@ -836,6 +899,7 @@
     // 単語一覧
     $('search-input').addEventListener('input', function (event) {
       state.query = event.target.value;
+      state.listLimit = LIST_PAGE;
       renderList();
     });
 
@@ -843,6 +907,12 @@
       var chip = event.target.closest('[data-filter]');
       if (!chip) return;
       state.filter = chip.dataset.filter;
+      state.listLimit = LIST_PAGE;
+      renderList();
+    });
+
+    $('list-more-btn').addEventListener('click', function () {
+      state.listLimit += LIST_PAGE;
       renderList();
     });
 

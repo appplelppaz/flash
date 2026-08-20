@@ -3,6 +3,17 @@
 var test = require('node:test');
 var assert = require('node:assert');
 
+// storage.js は localStorage を使うため、Node では簡易実装を用意する
+if (typeof globalThis.localStorage === 'undefined') {
+  var store = new Map();
+  globalThis.localStorage = {
+    getItem: function (key) { return store.has(key) ? store.get(key) : null; },
+    setItem: function (key, value) { store.set(key, String(value)); },
+    removeItem: function (key) { store.delete(key); },
+    clear: function () { store.clear(); }
+  };
+}
+
 var Study = require('../js/session.js');
 var Decks = require('../js/decks.js');
 var Storage = require('../js/storage.js');
@@ -232,25 +243,33 @@ test('連続学習日数は翌日なら加算、間が空けばリセットさ�
   assert.strictEqual(stats.bestStreakDays, 2);
 });
 
-test('withCustom は自作単語を単語帳に合流させる', function () {
-  var decks = Decks.withCustom({ en: [{ term: 'serendipity', meaning: '偶然の幸運' }] });
-  var en = decks.filter(function (d) { return d.id === 'en'; })[0];
-  var added = en.words.filter(function (w) { return w.term === 'serendipity'; })[0];
+test('listWithCustom は自作単語をリストに合流させる', function () {
+  var list = Decks.listWithCustom('en', { en: [{ term: 'serendipity', meaning: '偶然の幸運' }] });
+  var added = list.words.filter(function (w) { return w.term === 'serendipity'; })[0];
 
   assert.ok(added, '自作単語が合流していない');
   assert.strictEqual(added.custom, true);
   assert.strictEqual(added.id, 'en:serendipity');
-  assert.strictEqual(en.words.length, Decks.getDeck('en').words.length + 1);
-  assert.strictEqual(Decks.getDeck('en').words.length, 60, '元の単語帳は変更されない');
+  assert.strictEqual(list.words.length, Decks.getList('en').words.length + 1);
+  assert.strictEqual(Decks.getList('en').words.length, 60, '元のリストは変更されない');
 });
 
-test('withCustom は既存の単語と重複する自作単語を無視する', function () {
-  var decks = Decks.withCustom({ en: [{ term: 'effort', meaning: '重複' }] });
-  var en = decks.filter(function (d) { return d.id === 'en'; })[0];
-  var hits = en.words.filter(function (w) { return w.term === 'effort'; });
+test('listWithCustom は既存の単語と重複する自作単語を無視する', function () {
+  var list = Decks.listWithCustom('en', { en: [{ term: 'effort', meaning: '重複' }] });
+  var hits = list.words.filter(function (w) { return w.term === 'effort'; });
 
   assert.strictEqual(hits.length, 1);
   assert.strictEqual(hits[0].meaning, '努力');
+});
+
+test('withCustom は言語ごとに全リストを返す', function () {
+  var decks = Decks.withCustom({ 'fr-vie3000': [{ term: 'zzz-test', meaning: 'テスト' }] });
+  var fr = decks.filter(function (d) { return d.id === 'fr'; })[0];
+
+  assert.ok(fr.lists.length >= 2, 'フランス語のリストが 2 つ以上ない');
+  var target = fr.lists.filter(function (l) { return l.id === 'fr-vie3000'; })[0];
+  assert.ok(target.words.some(function (w) { return w.term === 'zzz-test'; }));
+  assert.strictEqual(fr.lists[0].id, fr.defaultListId, '既定のリストが先頭に並んでいない');
 });
 
 test('自動再生・自動めくりの設定が補正される', function () {
@@ -272,11 +291,25 @@ test('収録言語は 英語・中国語・スペイン語・フランス語 の
     ['英語', '中国語', 'スペイン語', 'フランス語']);
 });
 
-test('すべての単語に例文と例文の日本語訳がある', function () {
+test('言語ごとの既定の単語リストが決まっている', function () {
+  var expected = {
+    en: 'en-eiken1',
+    zh: 'zh-hsk69',
+    es: 'es-vida3000',
+    fr: 'fr-vie3000'
+  };
   Decks.DECKS.forEach(function (deck) {
-    deck.words.forEach(function (word) {
-      assert.ok(word.example, deck.name + ' の ' + word.term + ' に例文が無い');
-      assert.ok(word.exampleJa, deck.name + ' の ' + word.term + ' に例文の訳が無い');
+    assert.strictEqual(deck.defaultListId, expected[deck.id], deck.name + ' の既定リストが違う');
+    assert.ok(Decks.getList(deck.defaultListId), deck.name + ' の既定リストが存在しない');
+    assert.strictEqual(Decks.getList(deck.defaultListId).deckId, deck.id);
+  });
+});
+
+test('すべての単語に例文と例文の日本語訳がある', function () {
+  Decks.LISTS.forEach(function (list) {
+    list.words.forEach(function (word) {
+      assert.ok(word.example, list.name + ' の ' + word.term + ' に例文が無い');
+      assert.ok(word.exampleJa, list.name + ' の ' + word.term + ' に例文の訳が無い');
     });
   });
 });
@@ -284,15 +317,20 @@ test('すべての単語に例文と例文の日本語訳がある', function ()
 test('例文にはその単語が含まれている', function () {
   // 中国語は活用が無いのでそのまま、英語は活用を考慮して語幹（先頭 4 文字）で照合する。
   // スペイン語・フランス語は不規則活用（querer → quiero など）があるため対象外。
-  Decks.getDeck('zh').words.forEach(function (word) {
-    assert.ok(word.example.indexOf(word.term) >= 0,
-      '中国語の ' + word.term + ' の例文に単語が含まれていない');
-  });
-
-  Decks.getDeck('en').words.forEach(function (word) {
-    var stem = word.term.slice(0, 4).toLowerCase();
-    assert.ok(word.example.toLowerCase().indexOf(stem) >= 0,
-      '英語の ' + word.term + ' の例文に単語が含まれていない: ' + word.example);
+  Decks.LISTS.forEach(function (list) {
+    if (list.deckId === 'zh') {
+      list.words.forEach(function (word) {
+        assert.ok(word.example.indexOf(word.term) >= 0,
+          '中国語の ' + word.term + ' の例文に単語が含まれていない');
+      });
+    }
+    if (list.deckId === 'en') {
+      list.words.forEach(function (word) {
+        var stem = word.term.slice(0, 4).toLowerCase();
+        assert.ok(word.example.toLowerCase().indexOf(stem) >= 0,
+          '英語の ' + word.term + ' の例文に単語が含まれていない: ' + word.example);
+      });
+    }
   });
 });
 
@@ -303,17 +341,78 @@ test('単語帳には言語コードと読み上げ用のロケールがある',
   });
 });
 
-test('単語帳のデータが揃っていて ID が一意である', function () {
+test('単語リストのデータが揃っていて ID が一意である', function () {
   var seen = new Set();
-  assert.ok(Decks.DECKS.length > 0);
+  assert.ok(Decks.LISTS.length >= 8, '単語リストが足りない');
 
-  Decks.DECKS.forEach(function (deck) {
-    assert.ok(deck.words.length >= 20, deck.name + ' の単語が 20 語未満');
-    deck.words.forEach(function (word) {
-      assert.ok(word.term && word.meaning, deck.name + ' に不完全な単語がある');
-      assert.strictEqual(word.deckId, deck.id);
+  Decks.LISTS.forEach(function (list) {
+    assert.ok(list.name, 'リスト ' + list.id + ' に名前が無い');
+    assert.ok(Decks.getDeck(list.deckId), 'リスト ' + list.id + ' の言語が無い');
+    assert.ok(list.words.length >= 20, list.name + ' の単語が 20 語未満');
+
+    list.words.forEach(function (word) {
+      assert.ok(word.term && word.meaning, list.name + ' に不完全な単語がある');
+      assert.strictEqual(word.listId, list.id);
+      assert.strictEqual(word.deckId, list.deckId);
       assert.ok(!seen.has(word.id), 'ID が重複: ' + word.id);
       seen.add(word.id);
+    });
+  });
+});
+
+test('選択中の単語リストを言語ごとに保存できる', function () {
+  assert.strictEqual(Storage.selectedListId('fr', 'fr-vie3000'), 'fr-vie3000', '未選択なら既定のリスト');
+
+  Storage.saveSelectedList('fr', 'fr');
+  assert.strictEqual(Storage.selectedListId('fr', 'fr-vie3000'), 'fr');
+  assert.strictEqual(
+    Storage.selectedListId('fr', 'fr-vie3000', ['fr-vie3000']),
+    'fr-vie3000',
+    '選べないリストが保存されていたら既定に戻す'
+  );
+
+  Storage.saveSelectedList('fr', null);
+  assert.strictEqual(Storage.selectedListId('fr', 'fr-vie3000'), 'fr-vie3000');
+});
+
+test('言語ごとの既定リストは十分な語数がある', function () {
+  var minimum = {
+    'fr-vie3000': 3000,
+    'es-vida3000': 3000,
+    'en-eiken1': 2000,
+    'zh-hsk69': 2000
+  };
+  Object.keys(minimum).forEach(function (listId) {
+    var list = Decks.getList(listId);
+    assert.ok(list, listId + ' が見つからない');
+    assert.ok(list.words.length >= minimum[listId],
+      list.name + ' は ' + minimum[listId] + ' 語以上必要（現在 ' + list.words.length + ' 語）');
+  });
+});
+
+test('同じリストの中で単語が重複しない', function () {
+  Decks.LISTS.forEach(function (list) {
+    var seen = new Set();
+    list.words.forEach(function (word) {
+      assert.ok(!seen.has(word.term), list.name + ' で重複: ' + word.term);
+      seen.add(word.term);
+    });
+  });
+});
+
+test('中国語のリストにはピンインが付いている', function () {
+  Decks.LISTS.filter(function (list) { return list.deckId === 'zh'; }).forEach(function (list) {
+    list.words.forEach(function (word) {
+      assert.ok(word.reading, list.name + ' の ' + word.term + ' にピンインが無い');
+    });
+  });
+});
+
+test('例文の日本語訳が日本語で書かれている', function () {
+  Decks.LISTS.forEach(function (list) {
+    list.words.forEach(function (word) {
+      assert.match(word.exampleJa, /[ぁ-んァ-ヶ一-龠]/,
+        list.name + ' の ' + word.term + ' の訳が日本語ではない: ' + word.exampleJa);
     });
   });
 });
