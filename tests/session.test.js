@@ -374,3 +374,45 @@ test('選択中の単語リストを言語ごとに保存できる', function ()
   Storage.saveSelectedList('fr', null);
   assert.strictEqual(Storage.selectedListId('fr', 'fr-vie3000'), 'fr-vie3000');
 });
+
+test('言語ごとの既定リストは十分な語数がある', function () {
+  var minimum = {
+    'fr-vie3000': 3000,
+    'es-vida3000': 3000,
+    'en-eiken1': 2000,
+    'zh-hsk69': 2000
+  };
+  Object.keys(minimum).forEach(function (listId) {
+    var list = Decks.getList(listId);
+    assert.ok(list, listId + ' が見つからない');
+    assert.ok(list.words.length >= minimum[listId],
+      list.name + ' は ' + minimum[listId] + ' 語以上必要（現在 ' + list.words.length + ' 語）');
+  });
+});
+
+test('同じリストの中で単語が重複しない', function () {
+  Decks.LISTS.forEach(function (list) {
+    var seen = new Set();
+    list.words.forEach(function (word) {
+      assert.ok(!seen.has(word.term), list.name + ' で重複: ' + word.term);
+      seen.add(word.term);
+    });
+  });
+});
+
+test('中国語のリストにはピンインが付いている', function () {
+  Decks.LISTS.filter(function (list) { return list.deckId === 'zh'; }).forEach(function (list) {
+    list.words.forEach(function (word) {
+      assert.ok(word.reading, list.name + ' の ' + word.term + ' にピンインが無い');
+    });
+  });
+});
+
+test('例文の日本語訳が日本語で書かれている', function () {
+  Decks.LISTS.forEach(function (list) {
+    list.words.forEach(function (word) {
+      assert.match(word.exampleJa, /[ぁ-んァ-ヶ一-龠]/,
+        list.name + ' の ' + word.term + ' の訳が日本語ではない: ' + word.exampleJa);
+    });
+  });
+});
