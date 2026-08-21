@@ -328,7 +328,7 @@ test('withCustom は言語ごとに全リストを返す', function () {
   assert.strictEqual(fr.lists[0].id, fr.defaultListId, '既定のリストが先頭に並んでいない');
 });
 
-test('自動再生・自動めくりの設定が補正される', function () {
+test('自動再生・自動送りの設定が補正される', function () {
   var settings = Storage.normalizeSettings({ theme: 'bogus', speech: false, autoAdvance: false, autoSeconds: 99 });
   assert.strictEqual(settings.theme, 'auto');
   assert.strictEqual(settings.speech, false);
@@ -337,8 +337,34 @@ test('自動再生・自動めくりの設定が補正される', function () {
 
   var defaults = Storage.normalizeSettings({});
   assert.strictEqual(defaults.speech, true, '読み上げの自動再生は既定でオン');
-  assert.strictEqual(defaults.autoAdvance, true, '自動めくりは既定でオン');
-  assert.strictEqual(defaults.autoSeconds, 4);
+  assert.strictEqual(defaults.autoAdvance, true, '自動送りは既定でオン');
+  assert.strictEqual(defaults.autoSeconds, 1);
+});
+
+test('自動送りの間隔は既定で 1 秒（読み上げ後）', function () {
+  assert.strictEqual(Storage.DEFAULT_SETTINGS.autoSeconds, 1);
+  assert.strictEqual(Storage.normalizeSettings({}).autoSeconds, 1);
+});
+
+test('自動送りの間隔は 0.5 秒きざみで 0.5 〜 20 秒', function () {
+  var seconds = function (value) {
+    return Storage.normalizeSettings({ autoSeconds: value }).autoSeconds;
+  };
+  assert.strictEqual(seconds(0.5), 0.5);
+  assert.strictEqual(seconds(2.5), 2.5);
+  assert.strictEqual(seconds(1.3), 1.5, '0.5 きざみに丸める');
+  assert.strictEqual(seconds(0.1), 0.5, '下限で止める');
+  assert.strictEqual(seconds(99), 20, '上限で止める');
+  assert.strictEqual(seconds('abc'), 1, '数値でなければ既定');
+});
+
+test('以前の保存（4 秒）は新しい既定の 1 秒に寄せる', function () {
+  // 版が無い保存 = 以前のもの。自分で選んだ値でなければ寄せる
+  assert.strictEqual(Storage.normalizeSettings({ autoSeconds: 4 }).autoSeconds, 1);
+  assert.strictEqual(Storage.normalizeSettings({ autoSeconds: 8 }).autoSeconds, 8,
+    '自分で選んだ値はそのまま');
+  assert.strictEqual(Storage.normalizeSettings({ version: 2, autoSeconds: 4 }).autoSeconds, 4,
+    '新しい保存の 4 秒はそのまま');
 });
 
 test('収録言語は 英語・中国語・スペイン語・フランス語 の 4 つ', function () {
