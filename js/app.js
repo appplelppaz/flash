@@ -102,8 +102,13 @@
     return minutes ? minutes + ' 分 ' + (seconds % 60) + ' 秒' : seconds + ' 秒';
   }
 
-  function toast(message) {
-    $('toast').textContent = message || '';
+  /** 判定したことを、文字ではなく色のまたたきで返す */
+  function flashCard(kind) {
+    var card = $('card');
+    card.classList.remove('is-correct', 'is-wrong');
+    void card.offsetWidth; // アニメーションをやり直させる
+    card.classList.add(kind);
+    setTimeout(function () { card.classList.remove(kind); }, 320);
   }
 
   // ---------- 読み上げ ----------
@@ -243,7 +248,6 @@
     $('stat-accuracy').textContent = stats.answered
       ? Math.round((stats.correct / stats.answered) * 100) + '%'
       : '—';
-    $('home-word-count').textContent = state.settings.wordCount;
 
     var list = $('deck-list');
     list.innerHTML = '';
@@ -325,14 +329,12 @@
     });
 
     var available = scopeWords().length;
-    $('scope-hint').textContent = SCOPE_LABELS[state.scope] + ' の対象は ' + available + ' 語です。' +
-      (state.scope === 'weak' ? '（間違えたことがあり、まだ学習済みでない単語）' : '');
+    $('scope-hint').textContent = available + ' 語';
 
     var max = Math.max(1, available);
     var count = Math.min(deckCount(), max);
     $('deck-word-count').value = count;
     $('deck-word-count').max = max;
-    $('count-hint').textContent = '1 〜 ' + max + ' 語（設定のデフォルト: ' + state.settings.wordCount + ' 語）';
 
     Array.prototype.forEach.call($('count-presets').children, function (chip) {
       var value = chip.dataset.count === 'all' ? max : parseInt(chip.dataset.count, 10);
@@ -357,7 +359,6 @@
     });
     select.value = state.list ? state.list.id : '';
     select.disabled = deck.lists.length < 2;
-    $('list-desc').textContent = state.list ? state.list.description : '';
   }
 
   function deckCount() {
@@ -385,18 +386,16 @@
     });
     state.autoPaused = false;
 
-    toast('');
     showScreen('study');
     renderAutoButton();
     renderCard();
   }
 
+  /** 進み具合は細いメーターだけで示す（文字では出さない） */
   function renderStudyProgress() {
     var stats = state.session.stats();
     var percent = stats.total ? (stats.learned / stats.total) * 100 : 0;
     $('study-meter-fill').style.width = percent + '%';
-    $('study-progress').textContent = stats.learned + ' / ' + stats.total + ' 語 学習済み';
-    $('study-queue').textContent = '残り ' + state.session.queue.length + ' 枚';
   }
 
   /** カードを最初の段階（単語）から表示する */
@@ -443,7 +442,6 @@
       div.className = 'card-step is-current';
       div.dataset.key = step.key;
       div.innerHTML =
-        '<span class="step-label">' + step.label + '</span>' +
         '<p class="step-text">' + escapeHtml(step.text) + '</p>' +
         (step.reading ? '<p class="step-reading">' + escapeHtml(step.reading) + '</p>' : '');
       container.appendChild(div);
@@ -451,17 +449,12 @@
 
     renderStepDots();
 
-    var isLast = state.stepIndex >= state.steps.length - 1;
-    $('card-hint').textContent = isLast
-      ? '〇 / ✕ か 上下スワイプで判定'
-      : 'タップで次を表示（' + (state.stepIndex + 1) + ' / ' + state.steps.length + '）';
     $('prev-word-btn').disabled = !state.session.hasPrevious();
 
-    var favorites = Storage.loadFavorites();
     var card = state.session.current();
-    var isFav = card ? favorites[card.word.id] === true : false;
-    $('fav-btn').setAttribute('aria-pressed', isFav ? 'true' : 'false');
-    $('fav-btn').textContent = (isFav ? '★' : '☆') + ' お気に入り';
+    var favorites = Storage.loadFavorites();
+    $('fav-btn').setAttribute('aria-pressed',
+      card && favorites[card.word.id] === true ? 'true' : 'false');
 
     // 自動再生。読み上げが終わってから自動めくりの計測を始める
     clearAutoTimer();
@@ -510,10 +503,13 @@
     }, seconds * 1000);
   }
 
+  var PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5v14M14.5 5v14"/></svg>';
+  var PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>';
+
   function renderAutoButton() {
     var on = state.settings.autoAdvance && !state.autoPaused;
     $('auto-btn').setAttribute('aria-pressed', on ? 'true' : 'false');
-    $('auto-btn').textContent = (on ? '⏸' : '▶') + ' 自動送り';
+    $('auto-btn').innerHTML = on ? PAUSE_ICON : PLAY_ICON;
   }
 
   function toggleAuto() {
@@ -547,34 +543,27 @@
     if (!opts.auto) return; // 手動では最後の段階で止まり、判定を待つ
 
     // 一定時間なにも操作されなかったときは、判定せずに次の単語へ移る
-    nextWord({ auto: true });
+    nextWord();
   }
 
   /** 左スワイプ / ‹ : 直前に見ていた単語に戻る（判定はやり直せる） */
   function prevWord() {
     var session = state.session;
     if (!session) return;
-    if (!session.hasPrevious()) {
-      toast('これより前の単語はありません');
-      return;
-    }
+    if (!session.hasPrevious()) return;
     clearAutoTimer();
     stopSpeaking();
     session.previous();
-    toast('前の単語に戻りました');
     renderCard();
   }
 
   /** 右スワイプ / › : 判定せずに次の単語へ（この単語はあとでもう一度出る） */
-  function nextWord(options) {
+  function nextWord() {
     var session = state.session;
     if (!session || !session.current()) return;
     clearAutoTimer();
     stopSpeaking();
     session.skip();
-    toast((options && options.auto)
-      ? '判定しなかったので、この単語はもう一度出題します'
-      : '判定せずに次の単語へ進みました');
     renderCard();
   }
 
@@ -585,19 +574,10 @@
     clearAutoTimer();
     stopSpeaking();
 
-    var required = session.requiredStreak;
     var result = session.answer(isCorrect);
     if (!result) return;
 
-    var term = result.card.word.term;
-    if (result.learned) {
-      toast('✓ 「' + term + '」を学習済みにしました');
-    } else if (isCorrect) {
-      toast('連続 ' + result.card.streak + ' / ' + required + ' — あと ' +
-        (required - result.card.streak) + ' 回で学習済み');
-    } else {
-      toast('「' + term + '」はもう一度出題します');
-    }
+    flashCard(isCorrect ? 'is-correct' : 'is-wrong');
 
     if (result.complete) finishSession();
     else renderCard();
@@ -971,8 +951,8 @@
 
   function bind() {
     $('back-btn').addEventListener('click', goBack);
+    $('study-back-btn').addEventListener('click', goBack);
     $('settings-btn').addEventListener('click', openSettings);
-    $('open-settings-link').addEventListener('click', openSettings);
     $('settings-done-btn').addEventListener('click', goBack);
 
     // デッキ画面
@@ -1053,7 +1033,6 @@
       if (!card) return;
       var isFav = Storage.toggleFavorite(card.word.id);
       $('fav-btn').setAttribute('aria-pressed', isFav ? 'true' : 'false');
-      $('fav-btn').textContent = (isFav ? '★' : '☆') + ' お気に入り';
     });
 
     // 結果画面

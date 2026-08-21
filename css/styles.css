@@ -173,42 +173,9 @@ main {
 }
 
 .hint.error { color: var(--ng); }
-.hint-tight { margin: -18px 0 22px; }
 .hint:empty { display: none; }
 
-.link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-.foot-note {
-  margin: 28px 0 0;
-  color: var(--muted);
-  font-size: .8rem;
-  text-align: center;
-}
-
-.foot-note strong { color: var(--text); }
-
 /* ---------- ホーム ---------- */
-
-.hero { margin: 12px 0 24px; }
-
-.hero h1 {
-  margin: 0 0 6px;
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -.03em;
-  line-height: 1.3;
-}
-
-.hero p { margin: 0; color: var(--muted); font-size: .9rem; }
 
 .stat-strip {
   display: grid;
@@ -526,12 +493,12 @@ kbd {
 @media (hover: none) { kbd { display: none; } }
 
 /* ---------- 学習画面 ----------
-   語彙 → 日本語訳 → 例文 を段階的に見せる。
-   〇 は上、✕ は下、‹ › は左右に置いてあり、位置がそのままスワイプの向きになる。
-   iPhone 15 Pro の横画面（852 × 393 相当）で画面いっぱいに収まることを基準にしている。
+   画面に出すのは 単語（または訳・例文）と、意味の分かるアイコンだけ。
+   〇 は上・✕ は下・‹ › は左右にあり、位置がそのままスワイプの向きになる。
+   iPhone 15 Pro の横画面（852 × 393 相当）で画面いっぱいに収まるのが基準。
    ------------------------------------------------------------------ */
 
-/* 学習中は本文をスクロールさせず、ビューポート全体を使い切る */
+/* 学習中は上のバーごと隠し、ビューポートを使い切る */
 body.is-study {
   display: flex;
   flex-direction: column;
@@ -540,11 +507,7 @@ body.is-study {
   overscroll-behavior: none;
 }
 
-body.is-study .topbar {
-  flex: none;
-  max-width: none;
-  padding: 4px calc(10px + env(safe-area-inset-right)) 4px calc(10px + env(safe-area-inset-left));
-}
+body.is-study .topbar { display: none; }
 
 body.is-study main {
   flex: 1;
@@ -560,25 +523,57 @@ body.is-study .screen-study {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding:
-    2px
+    calc(4px + env(safe-area-inset-top))
     calc(10px + env(safe-area-inset-right))
     calc(4px + env(safe-area-inset-bottom))
     calc(10px + env(safe-area-inset-left));
 }
 
-.study-top { flex: none; }
-.study-top .meter { margin-bottom: 5px; }
+/* ---- 上の細いバー（戻る・進み具合・道具） ---- */
 
-.study-counts {
+.study-bar {
+  flex: none;
   display: flex;
-  justify-content: space-between;
-  margin: 0;
-  color: var(--muted);
-  font-size: .72rem;
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+  gap: 6px;
 }
+
+.study-bar .meter { flex: 1; }
+
+.ibtn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ibtn:hover { background: var(--surface-2); }
+.ibtn[aria-pressed="true"] { color: var(--text); }
+
+.ibtn svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 押されている状態は塗りつぶしで示す（★ と ▶） */
+#fav-btn[aria-pressed="true"] svg { fill: currentColor; }
+#auto-btn[aria-pressed="false"] svg { fill: currentColor; }
 
 /* ---- スワイプ面（左右の送り + 上下の判定 + カード） ---- */
 
@@ -588,7 +583,7 @@ body.is-study .screen-study {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: stretch;
-  gap: 8px;
+  gap: 6px;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -600,27 +595,31 @@ body.is-study .screen-study {
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 6px;
+  gap: 5px;
 }
 
 /* 〇 と ✕ */
 
 .mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  display: grid;
+  place-items: center;
   padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
   cursor: pointer;
   transition: background .15s ease, border-color .15s ease, transform .15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.mark-icon { font-size: 1.35rem; line-height: 1; font-weight: 700; }
-.mark-text { font-size: .78rem; font-weight: 600; letter-spacing: .02em; }
+.mark svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
 
 .mark-correct { color: var(--ok); }
 .mark-wrong { color: var(--ng); }
@@ -629,38 +628,39 @@ body.is-study .screen-study {
 .mark:active { transform: scale(.985); }
 
 /* スワイプがしきい値を超えたら、行き先のアイコンを光らせる */
-.mark.is-armed {
-  border-color: currentColor;
-  transform: scale(1.02);
-}
+.mark.is-armed { transform: scale(1.06); }
 .mark-correct.is-armed { background: var(--ok-bg); }
 .mark-wrong.is-armed { background: var(--ng-bg); }
 
 /* 左右の送り */
 
 .edge {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  width: 46px;
+  display: grid;
+  place-items: center;
+  width: 40px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 13px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  transition: background .15s ease, color .15s ease, transform .15s ease;
+  transition: background .15s ease, color .15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.edge-icon { font-size: 1.5rem; line-height: 1; }
-.edge-text { font-size: .6rem; letter-spacing: .04em; }
+.edge svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .edge:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-.edge:disabled { opacity: .35; cursor: default; }
-.edge.is-armed { background: var(--surface-2); color: var(--text); transform: scale(1.02); }
+.edge:disabled { opacity: .28; cursor: default; }
+.edge.is-armed { background: var(--surface-2); color: var(--text); }
 
 /* ---- カード ---- */
 
@@ -681,6 +681,20 @@ body.is-study .screen-study {
 
 .card.is-dragging { transition: none; }
 
+/* 判定したことは、文字ではなく色のまたたきで返す */
+.card.is-correct { animation: flash-ok .32s ease; }
+.card.is-wrong { animation: flash-ng .32s ease; }
+
+@keyframes flash-ok {
+  from { background: var(--ok-bg); border-color: var(--ok); }
+  to { background: var(--surface); border-color: var(--border); }
+}
+
+@keyframes flash-ng {
+  from { background: var(--ng-bg); border-color: var(--ng); }
+  to { background: var(--surface); border-color: var(--border); }
+}
+
 .card-steps {
   flex: 1;
   min-height: 0;
@@ -688,7 +702,6 @@ body.is-study .screen-study {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(6px, 2.2vh, 18px);
   width: 100%;
   overflow: hidden;
 }
@@ -702,15 +715,6 @@ body.is-study .screen-study {
 @keyframes step-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
-}
-
-.card-step .step-label {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--muted);
-  font-size: .6rem;
-  font-weight: 600;
-  letter-spacing: .12em;
 }
 
 .card-step .step-text {
@@ -739,7 +743,7 @@ body.is-study .screen-study {
 .card-step[data-key="example"] .step-text { font-weight: 500; }
 
 .card-step .step-reading {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: clamp(.85rem, 3.4vw, 1.15rem);
 }
@@ -750,32 +754,25 @@ body.is-study .screen-study {
   flex: none;
   display: flex;
   justify-content: center;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 5px;
+  margin-top: 6px;
 }
 
 .card-dots .dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--border);
   transition: background .2s ease, transform .2s ease;
 }
 
-.card-dots .dot.is-on { background: var(--muted); transform: scale(1.25); }
-
-.card-hint {
-  flex: none;
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: .68rem;
-}
+.card-dots .dot.is-on { background: var(--muted); transform: scale(1.3); }
 
 /* ---- 自動送りの残り時間 ---- */
 
 .card-timer {
   flex: none;
-  height: 3px;
+  height: 2px;
   border-radius: 99px;
   background: var(--surface-2);
   overflow: hidden;
@@ -788,82 +785,33 @@ body.is-study .screen-study {
   background: var(--muted);
 }
 
-/* ---- 下の道具立て ---- */
-
-.study-foot { flex: none; }
-.study-tools { display: flex; gap: 6px; }
-
-.tool {
-  flex: 1;
-  padding: 7px 4px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: .74rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.tool:hover { background: var(--surface-2); }
-.tool[aria-pressed="true"] { color: var(--text); border-color: color-mix(in srgb, var(--text) 30%, var(--border)); }
-
-.toast {
-  min-height: 1.3em;
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: .72rem;
-  text-align: center;
-}
-
 /* ---- 横画面（iPhone 15 Pro 横 = 852 × 393 を基準に詰める） ---- */
 
 @media (orientation: landscape) and (max-height: 500px) {
-  body.is-study .topbar { padding-top: 2px; padding-bottom: 2px; }
-  body.is-study .topbar .icon-btn { width: 30px; height: 30px; }
-  body.is-study .topbar-title { font-size: .72rem; }
+  .ibtn { width: 28px; height: 28px; }
+  .ibtn svg { width: 17px; height: 17px; }
 
-  .study-counts { font-size: .66rem; }
-
-  .mark { padding: 3px; gap: 8px; border-radius: 12px; }
-  .mark-icon { font-size: 1.1rem; }
-  .mark-text { font-size: .7rem; }
-
-  .edge { width: 40px; }
-  .edge-icon { font-size: 1.3rem; }
+  .mark { padding: 3px; border-radius: 11px; }
+  .mark svg { width: 22px; height: 22px; }
+  .edge { width: 36px; }
 
   .card { padding: 6px 14px; border-radius: 15px; }
-  .card-steps { gap: clamp(4px, 1.8vh, 10px); }
 
   /* 横画面は高さが足りないので、文字の大きさは高さ基準で決める */
-  .card-step .step-text { font-size: clamp(1rem, 6.5vh, 1.9rem); max-width: 52ch; }
-  .card-step[data-key="term"] .step-text { font-size: clamp(1.9rem, 15vh, 3.6rem); max-width: none; }
-  .card-step[data-key="meaning"] .step-text { font-size: clamp(1.4rem, 11vh, 2.6rem); max-width: 20ch; }
-  .card-step .step-reading { font-size: clamp(.72rem, 3.4vh, 1rem); }
-  .card-dots { margin-top: 5px; }
-
-  .card-hint { font-size: .62rem; margin-top: 2px; }
-  .tool { padding: 5px 4px; font-size: .7rem; }
-  .toast { min-height: 1.2em; margin-top: 2px; font-size: .68rem; }
+  .card-step .step-text { font-size: clamp(1rem, 7vh, 2rem); max-width: 52ch; }
+  .card-step[data-key="term"] .step-text { font-size: clamp(1.9rem, 16vh, 3.8rem); max-width: none; }
+  .card-step[data-key="meaning"] .step-text { font-size: clamp(1.4rem, 12vh, 2.8rem); max-width: 20ch; }
+  .card-step .step-reading { font-size: clamp(.72rem, 3.4vh, 1rem); margin-top: 3px; }
+  .card-dots { margin-top: 4px; }
 }
 
-/* 横画面でとくに高さが無いときは、補助的な文字を落として単語に場所を譲る */
-@media (orientation: landscape) and (max-height: 420px) {
-  .card-hint, .edge-text { display: none; }
-  .card-step .step-label { font-size: .55rem; margin-bottom: 0; }
-}
-
-/* 縦に余裕がある端末では、カードそのものを大きく見せる */
+/* 縦に余裕がある端末では、そのぶん大きく見せる */
 @media (min-width: 620px) and (min-height: 600px) {
-  .study-body { gap: 12px; }
-  .stack { gap: 10px; }
+  .study-body { gap: 10px; }
+  .stack { gap: 8px; }
   .mark { padding: 12px; }
-  .mark-icon { font-size: 1.7rem; }
-  .mark-text { font-size: .85rem; }
-  .edge { width: 56px; }
+  .mark svg { width: 32px; height: 32px; }
+  .edge { width: 54px; }
   .card { padding: 20px; }
 }
 
@@ -985,10 +933,6 @@ body.is-study .screen-study {
   color: var(--muted);
   font-size: .85rem;
   text-align: center;
-}
-
-@media (min-width: 620px) {
-  .hero h1 { font-size: 2rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
