@@ -187,6 +187,62 @@ test('skip は判定せずにカードを後ろへまわす', function () {
   assert.strictEqual(session.isComplete(), false);
 });
 
+test('最初のカードでは前の単語に戻れない', function () {
+  var session = new Study.StudySession({ words: makeWords(3), requiredStreak: 2 });
+  assert.strictEqual(session.hasPrevious(), false);
+  assert.strictEqual(session.previous(), null);
+});
+
+test('previous は直前に見ていた単語をもう一度先頭に出す（左スワイプ）', function () {
+  var session = new Study.StudySession({ words: makeWords(3), requiredStreak: 2 });
+  var first = session.current();
+
+  session.skip();
+  assert.notStrictEqual(session.current(), first);
+  assert.strictEqual(session.hasPrevious(), true);
+
+  assert.strictEqual(session.previous(), first);
+  assert.strictEqual(session.current(), first, '前の単語が先頭に戻っていない');
+  assert.strictEqual(session.hasPrevious(), false, '履歴を使い切っている');
+  assert.strictEqual(session.queue.length, 3, 'カードが二重に並んでいる');
+});
+
+test('判定したあとでも previous でその単語に戻れる', function () {
+  var session = new Study.StudySession({ words: makeWords(3), requiredStreak: 2 });
+  var first = session.current();
+
+  session.answer(false);
+  assert.strictEqual(session.previous(), first);
+  assert.strictEqual(session.current(), first);
+  assert.strictEqual(first.wrong, 1, '判定そのものは取り消さない');
+  assert.strictEqual(session.queue.length, 3);
+});
+
+test('学習済みになった単語も previous で戻せ、セッションは未完了に戻る', function () {
+  var session = new Study.StudySession({ words: makeWords(1), requiredStreak: 1 });
+  var only = session.current();
+
+  var result = session.answer(true);
+  assert.strictEqual(result.complete, true);
+  assert.strictEqual(session.isComplete(), true);
+
+  session.previous();
+  assert.strictEqual(session.current(), only);
+  assert.strictEqual(session.isComplete(), false);
+  assert.strictEqual(session.learnedCount(), 1, '学習済みの判定は残る');
+});
+
+test('previous でさかのぼれるのは直近 50 枚まで', function () {
+  var session = new Study.StudySession({ words: makeWords(60), requiredStreak: 5 });
+  for (var i = 0; i < 60; i++) session.skip();
+  var count = 0;
+  while (session.hasPrevious()) {
+    session.previous();
+    count++;
+  }
+  assert.strictEqual(count, 50);
+});
+
 test('stats は正答率と学習済み数を集計する', function () {
   var session = new Study.StudySession({ words: makeWords(2), requiredStreak: 1 });
   session.answer(true);

@@ -89,32 +89,49 @@
       </div>
     </section>
 
-    <!-- 学習 -->
+    <!-- 学習（画面いっぱい・横画面前提のレイアウト） -->
     <section class="screen screen-study" id="screen-study" hidden>
       <div class="study-top">
         <div class="meter"><span id="study-meter-fill"></span></div>
         <p class="study-counts"><span id="study-progress">0 / 0</span><span id="study-queue">残り 0</span></p>
       </div>
 
-      <div class="card" id="card" role="button" tabindex="0" aria-label="次を表示">
-        <div class="card-steps" id="card-steps"></div>
-        <div class="card-timer" id="card-timer" hidden><span id="card-timer-fill"></span></div>
-        <p class="card-hint" id="card-hint">タップ / Space で次を表示</p>
+      <!-- スワイプを受け取る面。上下左右のアイコンが、そのままスワイプの向きに対応する -->
+      <div class="study-body" id="study-body">
+        <button type="button" class="edge edge-prev" id="prev-word-btn" aria-label="前の単語に戻る">
+          <span class="edge-icon">‹</span><span class="edge-text">前へ</span>
+        </button>
+
+        <div class="stack">
+          <button type="button" class="mark mark-correct" id="correct-btn" aria-label="わかった">
+            <span class="mark-icon">〇</span><span class="mark-text">わかった<kbd>↑</kbd></span>
+          </button>
+
+          <div class="card" id="card" role="button" tabindex="0" aria-label="次を表示">
+            <div class="card-steps" id="card-steps"></div>
+            <p class="card-hint" id="card-hint">タップで次を表示</p>
+          </div>
+
+          <button type="button" class="mark mark-wrong" id="wrong-btn" aria-label="わからなかった">
+            <span class="mark-icon">✕</span><span class="mark-text">わからない<kbd>↓</kbd></span>
+          </button>
+        </div>
+
+        <button type="button" class="edge edge-next" id="next-word-btn" aria-label="次の単語に進む">
+          <span class="edge-icon">›</span><span class="edge-text">次へ</span>
+        </button>
       </div>
 
-      <div class="study-tools">
-        <button type="button" class="tool" id="speak-btn">🔊 もう一度聞く</button>
-        <button type="button" class="tool" id="auto-btn" aria-pressed="true">⏸ 自動めくり</button>
-        <button type="button" class="tool" id="fav-btn" aria-pressed="false">☆ お気に入り</button>
-      </div>
+      <div class="card-timer" id="card-timer" hidden><span id="card-timer-fill"></span></div>
 
-      <div class="judge" id="judge" hidden>
-        <button type="button" class="btn btn-ghost-wrong" id="wrong-btn">わからなかった<kbd>←</kbd></button>
-        <button type="button" class="btn btn-ghost-correct" id="correct-btn">わかった<kbd>→</kbd></button>
+      <div class="study-foot">
+        <div class="study-tools">
+          <button type="button" class="tool" id="speak-btn">🔊 もう一度</button>
+          <button type="button" class="tool" id="auto-btn" aria-pressed="true">⏸ 自動送り</button>
+          <button type="button" class="tool" id="fav-btn" aria-pressed="false">☆ お気に入り</button>
+        </div>
+        <p class="toast" id="toast"></p>
       </div>
-      <button type="button" class="btn btn-primary" id="next-btn">次を表示<kbd>Space</kbd></button>
-
-      <p class="toast" id="toast"></p>
     </section>
 
     <!-- 結果 -->
@@ -235,13 +252,13 @@
       <p class="hint hint-tight">単語 → 日本語訳 → 例文 → 例文の日本語訳 → 例文 の順に自動で読み上げます。</p>
 
       <div class="block toggle-row">
-        <label class="block-label" for="set-auto">自動めくり</label>
+        <label class="block-label" for="set-auto">自動送り</label>
         <input type="checkbox" id="set-auto" class="switch">
       </div>
-      <p class="hint hint-tight">単語 → 日本語訳 → 例文 を自動で送ります（読み上げが終わってから計測します）。</p>
+      <p class="hint hint-tight">単語 → 日本語訳 → 例文 を自動で送り、最後まで見ても操作がなければ次の単語へ移ります（読み上げが終わってから計測します）。</p>
 
       <div class="block">
-        <label class="block-label" for="set-auto-seconds">自動めくりの間隔（秒）</label>
+        <label class="block-label" for="set-auto-seconds">自動送りの間隔（秒）</label>
         <input type="number" id="set-auto-seconds" min="1" max="20" step="1" inputmode="numeric">
       </div>
 

@@ -186,6 +186,9 @@
       stopSpeaking();
     }
 
+    // 学習画面だけはビューポート全体を使う（横画面で画面いっぱいに表示するため）
+    document.body.classList.toggle('is-study', name === 'study');
+
     SCREENS.forEach(function (screen) {
       document.getElementById('screen-' + screen).hidden = (screen !== name);
     });
@@ -430,9 +433,10 @@
     });
 
     var isLast = state.stepIndex >= state.steps.length - 1;
-    $('judge').hidden = !isLast;
-    $('next-btn').hidden = isLast;
-    $('card-hint').hidden = isLast;
+    $('card-hint').textContent = isLast
+      ? '〇 / ✕ か 上下スワイプで判定'
+      : 'タップで次を表示（' + (state.stepIndex + 1) + ' / ' + state.steps.length + '）';
+    $('prev-word-btn').disabled = !state.session.hasPrevious();
 
     var favorites = Storage.loadFavorites();
     var card = state.session.current();
@@ -491,7 +495,7 @@
   function renderAutoButton() {
     var on = state.settings.autoAdvance && !state.autoPaused;
     $('auto-btn').setAttribute('aria-pressed', on ? 'true' : 'false');
-    $('auto-btn').textContent = (on ? '⏸' : '▶') + ' 自動めくり';
+    $('auto-btn').textContent = (on ? '⏸' : '▶') + ' 自動送り';
   }
 
   function toggleAuto() {
@@ -524,8 +528,35 @@
 
     if (!opts.auto) return; // 手動では最後の段階で止まり、判定を待つ
 
-    state.session.skip();
-    toast('判定しなかったので、この単語はもう一度出題します');
+    // 一定時間なにも操作されなかったときは、判定せずに次の単語へ移る
+    nextWord({ auto: true });
+  }
+
+  /** 左スワイプ / ‹ : 直前に見ていた単語に戻る（判定はやり直せる） */
+  function prevWord() {
+    var session = state.session;
+    if (!session) return;
+    if (!session.hasPrevious()) {
+      toast('これより前の単語はありません');
+      return;
+    }
+    clearAutoTimer();
+    stopSpeaking();
+    session.previous();
+    toast('前の単語に戻りました');
+    renderCard();
+  }
+
+  /** 右スワイプ / › : 判定せずに次の単語へ（この単語はあとでもう一度出る） */
+  function nextWord(options) {
+    var session = state.session;
+    if (!session || !session.current()) return;
+    clearAutoTimer();
+    stopSpeaking();
+    session.skip();
+    toast((options && options.auto)
+      ? '判定しなかったので、この単語はもう一度出題します'
+      : '判定せずに次の単語へ進みました');
     renderCard();
   }
 
@@ -574,6 +605,114 @@
 
     state.session = null;
     showScreen('result');
+  }
+
+  // ---------- ジェスチャー ----------
+
+  // ここまで動かしたらスワイプとみなす距離（px）と、スワイプと認める時間（ms）
+  var SWIPE_MIN = 44;
+  var SWIPE_MAX_MS = 900;
+  // 指の動きをカードに反映させるときの控えめな追従率と、その上限（px）
+  var DRAG_RATIO = 0.32;
+  var DRAG_MAX = 60;
+
+  var swipe = { id: null, x: 0, y: 0, at: 0, dir: null, handled: false };
+
+  /** 直前のスワイプで click が起きた場合は、その click を無視する */
+  function swipeConsumedClick() {
+    if (!swipe.handled) return false;
+    swipe.handled = false;
+    return true;
+  }
+
+  function swipeDirection(dx, dy) {
+    var adx = Math.abs(dx);
+    var ady = Math.abs(dy);
+    if (Math.max(adx, ady) < SWIPE_MIN) return null;
+    if (ady >= adx) return dy < 0 ? 'up' : 'down';
+    return dx < 0 ? 'left' : 'right';
+  }
+
+  function armMark(dir) {
+    $('correct-btn').classList.toggle('is-armed', dir === 'up');
+    $('wrong-btn').classList.toggle('is-armed', dir === 'down');
+    $('prev-word-btn').classList.toggle('is-armed', dir === 'left');
+    $('next-word-btn').classList.toggle('is-armed', dir === 'right');
+  }
+
+  function dragCard(dx, dy) {
+    var card = $('card');
+    function clamp(value) {
+      return Math.max(-DRAG_MAX, Math.min(DRAG_MAX, value * DRAG_RATIO));
+    }
+    if (dx === 0 && dy === 0) {
+      card.classList.remove('is-dragging');
+      card.style.transform = '';
+      return;
+    }
+    card.classList.add('is-dragging');
+    card.style.transform = 'translate(' + clamp(dx) + 'px, ' + clamp(dy) + 'px)';
+  }
+
+  function endSwipe() {
+    swipe.id = null;
+    swipe.dir = null;
+    armMark(null);
+    dragCard(0, 0);
+  }
+
+  /**
+   * 上スワイプ = 〇、下スワイプ = ✕、左スワイプ = 前の単語、右スワイプ = 次の単語。
+   * 画面上のアイコンの位置と向きをそろえてある。
+   */
+  function runSwipe(dir) {
+    if (dir === 'up') judge(true);
+    else if (dir === 'down') judge(false);
+    else if (dir === 'left') prevWord();
+    else if (dir === 'right') nextWord();
+  }
+
+  /**
+   * pointerdown だけを面で受け、その後の move / up は window で追う。
+   * setPointerCapture を使うと click の宛先が面に移ってしまい、
+   * カードや 〇 / ✕ のタップが効かなくなるため、こちらの形にしている。
+   */
+  function bindGestures(surface) {
+    surface.addEventListener('pointerdown', function (event) {
+      if (swipe.id !== null) return;
+      swipe.id = event.pointerId;
+      swipe.x = event.clientX;
+      swipe.y = event.clientY;
+      swipe.at = Date.now();
+      swipe.dir = null;
+      swipe.handled = false;
+    });
+
+    window.addEventListener('pointermove', function (event) {
+      if (swipe.id !== event.pointerId) return;
+      var dx = event.clientX - swipe.x;
+      var dy = event.clientY - swipe.y;
+      swipe.dir = swipeDirection(dx, dy);
+      armMark(swipe.dir);
+      dragCard(dx, dy);
+    });
+
+    window.addEventListener('pointerup', function (event) {
+      if (swipe.id !== event.pointerId) return;
+      var dir = swipeDirection(event.clientX - swipe.x, event.clientY - swipe.y);
+      var inTime = Date.now() - swipe.at <= SWIPE_MAX_MS;
+      endSwipe();
+      if (!dir || !inTime) return;
+      // 続けて起きる click（カードや 〇 / ✕ のタップ）は打ち消す。
+      // click が来ない場合もあるので、少し経ったら自分で下ろす。
+      swipe.handled = true;
+      setTimeout(function () { swipe.handled = false; }, 400);
+      runSwipe(dir);
+    });
+
+    window.addEventListener('pointercancel', function (event) {
+      if (swipe.id === event.pointerId) endSwipe();
+    });
   }
 
   // ---------- 単語一覧 ----------
@@ -853,17 +992,35 @@
     $('open-list-btn').addEventListener('click', openList);
 
     // 学習画面
-    $('card').addEventListener('click', function () { advance(); });
+    $('card').addEventListener('click', function () {
+      if (swipeConsumedClick()) return;
+      advance();
+    });
     $('card').addEventListener('keydown', function (event) {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         advance();
       }
     });
-    $('next-btn').addEventListener('click', function () { advance(); });
-    $('correct-btn').addEventListener('click', function () { judge(true); });
-    $('wrong-btn').addEventListener('click', function () { judge(false); });
+    $('correct-btn').addEventListener('click', function () {
+      if (swipeConsumedClick()) return;
+      judge(true);
+    });
+    $('wrong-btn').addEventListener('click', function () {
+      if (swipeConsumedClick()) return;
+      judge(false);
+    });
+    $('prev-word-btn').addEventListener('click', function () {
+      if (swipeConsumedClick()) return;
+      prevWord();
+    });
+    $('next-word-btn').addEventListener('click', function () {
+      if (swipeConsumedClick()) return;
+      nextWord();
+    });
     $('auto-btn').addEventListener('click', toggleAuto);
+
+    bindGestures($('study-body'));
 
     $('speak-btn').addEventListener('click', function () {
       var step = state.steps[state.stepIndex];
@@ -945,17 +1102,22 @@
       var tag = (event.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
 
-      var isLast = state.stepIndex >= state.steps.length - 1;
-
+      // スワイプと同じ向きの割り当て（↑ = 〇、↓ = ✕、← = 前、→ = 次）
       if (event.key === ' ' || event.key === 'Enter') {
         event.preventDefault();
         advance();
-      } else if (isLast && (event.key === 'ArrowRight' || event.key === '2')) {
+      } else if (event.key === 'ArrowUp' || event.key === '2') {
         event.preventDefault();
         judge(true);
-      } else if (isLast && (event.key === 'ArrowLeft' || event.key === '1')) {
+      } else if (event.key === 'ArrowDown' || event.key === '1') {
         event.preventDefault();
         judge(false);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        prevWord();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        nextWord();
       } else if (event.key.toLowerCase() === 'p') {
         event.preventDefault();
         toggleAuto();
