@@ -23,11 +23,6 @@
   <main id="main">
     <!-- ホーム -->
     <section class="screen" id="screen-home">
-      <div class="hero">
-        <h1>今日も 1 セットだけ。</h1>
-        <p>選んだ単語がすべて学習済みになるまで繰り返します。</p>
-      </div>
-
       <div class="stat-strip">
         <div class="stat"><span class="stat-value" id="stat-learned">0</span><span class="stat-label">学習済み</span></div>
         <div class="stat"><span class="stat-value" id="stat-streak">0</span><span class="stat-label">連続日数</span></div>
@@ -35,8 +30,6 @@
       </div>
 
       <ul class="deck-list" id="deck-list"></ul>
-
-      <p class="foot-note">1 回の出題数は現在 <strong id="home-word-count">20</strong> 語です。<button type="button" class="link" id="open-settings-link">設定を開く</button></p>
     </section>
 
     <!-- デッキ（出題設定） -->
@@ -54,7 +47,6 @@
       <div class="block">
         <label class="block-label" for="list-select">単語リスト</label>
         <select id="list-select"></select>
-        <p class="hint" id="list-desc"></p>
       </div>
 
       <div class="block">
@@ -80,7 +72,6 @@
           <button type="button" class="chip" data-count="30">30</button>
           <button type="button" class="chip" data-count="all">すべて</button>
         </div>
-        <p class="hint" id="count-hint"></p>
       </div>
 
       <div class="actions">
@@ -89,32 +80,49 @@
       </div>
     </section>
 
-    <!-- 学習 -->
+    <!-- 学習（アイコンだけの全画面レイアウト・横画面前提） -->
     <section class="screen screen-study" id="screen-study" hidden>
-      <div class="study-top">
+      <div class="study-bar">
+        <button type="button" class="ibtn" id="study-back-btn" aria-label="学習をやめる">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
         <div class="meter"><span id="study-meter-fill"></span></div>
-        <p class="study-counts"><span id="study-progress">0 / 0</span><span id="study-queue">残り 0</span></p>
+        <button type="button" class="ibtn" id="speak-btn" aria-label="もう一度聞く">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12L7.5 14.5H4z"/><path d="M16 9.2a4 4 0 010 5.6"/><path d="M18.6 6.6a7.5 7.5 0 010 10.8"/></svg>
+        </button>
+        <button type="button" class="ibtn" id="auto-btn" aria-pressed="true" aria-label="自動送り"></button>
+        <button type="button" class="ibtn" id="fav-btn" aria-pressed="false" aria-label="お気に入り">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.6 9.7l5.8-.8z"/></svg>
+        </button>
       </div>
 
-      <div class="card" id="card" role="button" tabindex="0" aria-label="次を表示">
-        <div class="card-steps" id="card-steps"></div>
-        <div class="card-timer" id="card-timer" hidden><span id="card-timer-fill"></span></div>
-        <p class="card-hint" id="card-hint">タップ / Space で次を表示</p>
+      <!-- スワイプを受け取る面。アイコンの位置がそのままスワイプの向きになる -->
+      <div class="study-body" id="study-body">
+        <button type="button" class="edge" id="prev-word-btn" aria-label="前の単語に戻る">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
+
+        <div class="stack">
+          <button type="button" class="mark mark-correct" id="correct-btn" aria-label="わかった">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
+          </button>
+
+          <div class="card" id="card" role="button" tabindex="0" aria-label="次を表示">
+            <div class="card-steps" id="card-steps"></div>
+            <div class="card-dots" id="card-dots" aria-hidden="true"></div>
+          </div>
+
+          <button type="button" class="mark mark-wrong" id="wrong-btn" aria-label="わからなかった">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+          </button>
+        </div>
+
+        <button type="button" class="edge" id="next-word-btn" aria-label="次の単語に進む">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
       </div>
 
-      <div class="study-tools">
-        <button type="button" class="tool" id="speak-btn">🔊 もう一度聞く</button>
-        <button type="button" class="tool" id="auto-btn" aria-pressed="true">⏸ 自動めくり</button>
-        <button type="button" class="tool" id="fav-btn" aria-pressed="false">☆ お気に入り</button>
-      </div>
-
-      <div class="judge" id="judge" hidden>
-        <button type="button" class="btn btn-ghost-wrong" id="wrong-btn">わからなかった<kbd>←</kbd></button>
-        <button type="button" class="btn btn-ghost-correct" id="correct-btn">わかった<kbd>→</kbd></button>
-      </div>
-      <button type="button" class="btn btn-primary" id="next-btn">次を表示<kbd>Space</kbd></button>
-
-      <p class="toast" id="toast"></p>
+      <div class="card-timer" id="card-timer" hidden><span id="card-timer-fill"></span></div>
     </section>
 
     <!-- 結果 -->
@@ -187,18 +195,14 @@
 
     <!-- 設定 -->
     <section class="screen" id="screen-settings" hidden>
-      <h2 class="screen-title">設定</h2>
-
       <div class="block">
         <label class="block-label" for="set-word-count">出題する単語数</label>
         <input type="number" id="set-word-count" min="1" max="500" step="1" inputmode="numeric">
-        <p class="hint">1 回の学習で出題する単語数（デフォルト 20）。単語帳の総数より多い場合は総数に丸められます。</p>
       </div>
 
       <div class="block">
         <label class="block-label" for="set-streak">学習済みと判定する連続正解回数</label>
         <input type="number" id="set-streak" min="1" max="10" step="1" inputmode="numeric">
-        <p class="hint">この回数だけ連続で正解すると学習済みになります（デフォルト 2）。</p>
       </div>
 
       <div class="block">
@@ -232,17 +236,14 @@
         <label class="block-label" for="set-speech">読み上げを自動再生する</label>
         <input type="checkbox" id="set-speech" class="switch">
       </div>
-      <p class="hint hint-tight">単語 → 日本語訳 → 例文 → 例文の日本語訳 → 例文 の順に自動で読み上げます。</p>
-
       <div class="block toggle-row">
-        <label class="block-label" for="set-auto">自動めくり</label>
+        <label class="block-label" for="set-auto">自動送り</label>
         <input type="checkbox" id="set-auto" class="switch">
       </div>
-      <p class="hint hint-tight">単語 → 日本語訳 → 例文 を自動で送ります（読み上げが終わってから計測します）。</p>
-
       <div class="block">
-        <label class="block-label" for="set-auto-seconds">自動めくりの間隔（秒）</label>
-        <input type="number" id="set-auto-seconds" min="1" max="20" step="1" inputmode="numeric">
+        <label class="block-label" for="set-auto-seconds">自動送りの間隔（秒）</label>
+        <input type="number" id="set-auto-seconds" min="0.5" max="20" step="0.5" inputmode="decimal">
+        <p class="hint">読み上げが終わってから、次の表示に移るまでの秒数（0.5 〜 20）。</p>
       </div>
 
       <div class="block">
@@ -253,7 +254,7 @@
           <button type="button" class="btn btn-danger" id="reset-btn">学習進捗をリセット</button>
         </div>
         <input type="file" id="import-file" accept="application/json" hidden>
-        <p class="hint" id="data-hint">設定・進捗・お気に入り・自作単語をまとめて JSON で保存できます。</p>
+        <p class="hint" id="data-hint"></p>
       </div>
 
       <button type="button" class="btn btn-primary" id="settings-done-btn">保存して戻る</button>

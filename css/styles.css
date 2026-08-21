@@ -69,6 +69,9 @@
 
 html, body { height: 100%; }
 
+/* 横向きのドラッグがブラウザの「戻る」ジェスチャーに取られないようにする */
+html { overscroll-behavior-x: none; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -170,42 +173,9 @@ main {
 }
 
 .hint.error { color: var(--ng); }
-.hint-tight { margin: -18px 0 22px; }
 .hint:empty { display: none; }
 
-.link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-.foot-note {
-  margin: 28px 0 0;
-  color: var(--muted);
-  font-size: .8rem;
-  text-align: center;
-}
-
-.foot-note strong { color: var(--text); }
-
 /* ---------- ホーム ---------- */
-
-.hero { margin: 12px 0 24px; }
-
-.hero h1 {
-  margin: 0 0 6px;
-  font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -.03em;
-  line-height: 1.3;
-}
-
-.hero p { margin: 0; color: var(--muted); font-size: .9rem; }
 
 .stat-strip {
   display: grid;
@@ -522,79 +492,287 @@ kbd {
 
 @media (hover: none) { kbd { display: none; } }
 
-/* ---------- 学習画面 ---------- */
+/* ---------- 学習画面 ----------
+   画面に出すのは 単語（または訳・例文）と、意味の分かるアイコンだけ。
+   〇 は上・✕ は下・‹ › は左右にあり、位置がそのままスワイプの向きになる。
+   iPhone 15 Pro の横画面（852 × 393 相当）で画面いっぱいに収まるのが基準。
+   ------------------------------------------------------------------ */
 
-.study-top { margin-bottom: 18px; }
-.study-top .meter { margin-bottom: 7px; }
-
-.study-counts {
+/* 学習中は上のバーごと隠し、ビューポートを使い切る */
+body.is-study {
   display: flex;
-  justify-content: space-between;
-  margin: 0;
-  color: var(--muted);
-  font-size: .76rem;
-  font-variant-numeric: tabular-nums;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
+body.is-study .topbar { display: none; }
+
+body.is-study main {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+}
+
+body.is-study .screen-study {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding:
+    calc(4px + env(safe-area-inset-top))
+    calc(10px + env(safe-area-inset-right))
+    calc(4px + env(safe-area-inset-bottom))
+    calc(10px + env(safe-area-inset-left));
+}
+
+/* ---- 上の細いバー（戻る・進み具合・道具） ---- */
+
+.study-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.study-bar .meter { flex: 1; }
+
+.ibtn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ibtn:hover { background: var(--surface-2); }
+.ibtn[aria-pressed="true"] { color: var(--text); }
+
+.ibtn svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 押されている状態は塗りつぶしで示す（★ と ▶） */
+#fav-btn[aria-pressed="true"] svg { fill: currentColor; }
+#auto-btn[aria-pressed="false"] svg { fill: currentColor; }
+
+/* ---- スワイプ面（左右の送り + 上下の判定 + カード） ---- */
+
+.study-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 6px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* スワイプがページや内側のスクロールに取られないよう、面全体で既定の指の動きを止める */
+.study-body,
+.study-body * { touch-action: none; }
+
+.stack {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 5px;
+}
+
+/* 〇 と ✕ */
+
+.mark {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mark svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.mark-correct { color: var(--ok); }
+.mark-wrong { color: var(--ng); }
+
+.mark:hover { background: var(--surface-2); }
+.mark:active { transform: scale(.985); }
+
+/* スワイプがしきい値を超えたら、行き先のアイコンを光らせる */
+.mark.is-armed { transform: scale(1.06); }
+.mark-correct.is-armed { background: var(--ok-bg); }
+.mark-wrong.is-armed { background: var(--ng-bg); }
+
+/* 左右の送り */
+
+.edge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.edge svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.edge:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.edge:disabled { opacity: .28; cursor: default; }
+.edge.is-armed { background: var(--surface-2); color: var(--text); }
+
+/* ---- カード ---- */
+
 .card {
-  min-height: 300px;
-  padding: 24px 20px;
-  margin-bottom: 14px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 16px;
   border: 1px solid var(--border);
-  border-radius: 22px;
+  border-radius: 18px;
   background: var(--surface);
   box-shadow: var(--shadow);
   text-align: center;
   cursor: pointer;
+  overflow: hidden;
   -webkit-tap-highlight-color: transparent;
 }
 
-.card-steps { display: grid; gap: 18px; }
+.card.is-dragging { transition: none; }
 
-.card-step {
-  animation: step-in .28s cubic-bezier(.2, .7, .3, 1);
-  opacity: .62;
-  transition: opacity .25s ease;
+/* 判定したことは、文字ではなく色のまたたきで返す */
+.card.is-correct { animation: flash-ok .32s ease; }
+.card.is-wrong { animation: flash-ng .32s ease; }
+
+@keyframes flash-ok {
+  from { background: var(--ok-bg); border-color: var(--ok); }
+  to { background: var(--surface); border-color: var(--border); }
 }
 
-.card-step.is-current { opacity: 1; }
+@keyframes flash-ng {
+  from { background: var(--ng-bg); border-color: var(--ng); }
+  to { background: var(--surface); border-color: var(--border); }
+}
+
+.card-steps {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* 表示するのは常に 1 段階だけ。切り替わったことが分かるよう軽く動かす */
+.card-step {
+  width: 100%;
+  animation: step-in .24s cubic-bezier(.2, .7, .3, 1);
+}
 
 @keyframes step-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
 }
 
-.card-step .step-label {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: .66rem;
-  font-weight: 600;
-  letter-spacing: .12em;
-}
-
 .card-step .step-text {
-  margin: 0;
-  font-size: 1.05rem;
-  line-height: 1.55;
+  margin: 0 auto;
+  max-width: 34ch;
+  font-size: clamp(1.3rem, 7vw, 2.2rem);
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
 .card-step[data-key="term"] .step-text {
-  font-size: 2rem;
+  max-width: none;
+  font-size: clamp(2.4rem, 12vw, 4.4rem);
   font-weight: 700;
   letter-spacing: -.02em;
+  line-height: 1.1;
+}
+
+.card-step[data-key="meaning"] .step-text {
+  max-width: 20ch;
+  font-size: clamp(1.9rem, 11vw, 3.2rem);
+  font-weight: 600;
   line-height: 1.25;
 }
 
-.card-step[data-key="meaning"] .step-text { font-size: 1.3rem; font-weight: 600; }
 .card-step[data-key="example"] .step-text { font-weight: 500; }
 
-.card-step .step-reading { margin: 4px 0 0; color: var(--muted); font-size: .85rem; }
+.card-step .step-reading {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: clamp(.85rem, 3.4vw, 1.15rem);
+}
+
+/* 段階の現在地 */
+
+.card-dots {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.card-dots .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background .2s ease, transform .2s ease;
+}
+
+.card-dots .dot.is-on { background: var(--muted); transform: scale(1.3); }
+
+/* ---- 自動送りの残り時間 ---- */
 
 .card-timer {
+  flex: none;
   height: 2px;
-  margin-top: 20px;
   border-radius: 99px;
   background: var(--surface-2);
   overflow: hidden;
@@ -607,33 +785,34 @@ kbd {
   background: var(--muted);
 }
 
-.card-hint { margin: 16px 0 0; color: var(--muted); font-size: .74rem; }
+/* ---- 横画面（iPhone 15 Pro 横 = 852 × 393 を基準に詰める） ---- */
 
-.study-tools { display: flex; gap: 8px; margin-bottom: 14px; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .ibtn { width: 28px; height: 28px; }
+  .ibtn svg { width: 17px; height: 17px; }
 
-.tool {
-  flex: 1;
-  padding: 9px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: .8rem;
-  font-weight: 600;
-  cursor: pointer;
+  .mark { padding: 3px; border-radius: 11px; }
+  .mark svg { width: 22px; height: 22px; }
+  .edge { width: 36px; }
+
+  .card { padding: 6px 14px; border-radius: 15px; }
+
+  /* 横画面は高さが足りないので、文字の大きさは高さ基準で決める */
+  .card-step .step-text { font-size: clamp(1rem, 7vh, 2rem); max-width: 52ch; }
+  .card-step[data-key="term"] .step-text { font-size: clamp(1.9rem, 16vh, 3.8rem); max-width: none; }
+  .card-step[data-key="meaning"] .step-text { font-size: clamp(1.4rem, 12vh, 2.8rem); max-width: 20ch; }
+  .card-step .step-reading { font-size: clamp(.72rem, 3.4vh, 1rem); margin-top: 3px; }
+  .card-dots { margin-top: 4px; }
 }
 
-.tool:hover { background: var(--surface-2); }
-.tool[aria-pressed="true"] { color: var(--text); border-color: color-mix(in srgb, var(--text) 30%, var(--border)); }
-
-.judge { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-
-.toast {
-  min-height: 1.4em;
-  margin: 14px 0 0;
-  color: var(--muted);
-  font-size: .78rem;
-  text-align: center;
+/* 縦に余裕がある端末では、そのぶん大きく見せる */
+@media (min-width: 620px) and (min-height: 600px) {
+  .study-body { gap: 10px; }
+  .stack { gap: 8px; }
+  .mark { padding: 12px; }
+  .mark svg { width: 32px; height: 32px; }
+  .edge { width: 54px; }
+  .card { padding: 20px; }
 }
 
 /* ---------- 結果 ---------- */
@@ -754,11 +933,6 @@ kbd {
   color: var(--muted);
   font-size: .85rem;
   text-align: center;
-}
-
-@media (min-width: 620px) {
-  .hero h1 { font-size: 2rem; }
-  .card { min-height: 330px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

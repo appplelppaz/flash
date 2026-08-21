@@ -187,6 +187,62 @@ test('skip は判定せずにカードを後ろへまわす', function () {
   assert.strictEqual(session.isComplete(), false);
 });
 
+test('最初のカードでは前の単語に戻れない', function () {
+  var session = new Study.StudySession({ words: makeWords(3), requiredStreak: 2 });
+  assert.strictEqual(session.hasPrevious(), false);
+  assert.strictEqual(session.previous(), null);
+});
+
+test('previous は直前に見ていた単語をもう一度先頭に出す（左スワイプ）', function () {
+  var session = new Study.StudySession({ words: makeWords(3), requiredStreak: 2 });
+  var first = session.current();
+
+  session.skip();
+  assert.notStrictEqual(session.current(), first);
+  assert.strictEqual(session.hasPrevious(), true);
+
+  assert.strictEqual(session.previous(), first);
+  assert.strictEqual(session.current(), first, '前の単語が先頭に戻っていない');
+  assert.strictEqual(session.hasPrevious(), false, '履歴を使い切っている');
+  assert.strictEqual(session.queue.length, 3, 'カードが二重に並んでいる');
+});
+
+test('判定したあとでも previous でその単語に戻れる', function () {
+  var session = new Study.StudySession({ words: makeWords(3), requiredStreak: 2 });
+  var first = session.current();
+
+  session.answer(false);
+  assert.strictEqual(session.previous(), first);
+  assert.strictEqual(session.current(), first);
+  assert.strictEqual(first.wrong, 1, '判定そのものは取り消さない');
+  assert.strictEqual(session.queue.length, 3);
+});
+
+test('学習済みになった単語も previous で戻せ、セッションは未完了に戻る', function () {
+  var session = new Study.StudySession({ words: makeWords(1), requiredStreak: 1 });
+  var only = session.current();
+
+  var result = session.answer(true);
+  assert.strictEqual(result.complete, true);
+  assert.strictEqual(session.isComplete(), true);
+
+  session.previous();
+  assert.strictEqual(session.current(), only);
+  assert.strictEqual(session.isComplete(), false);
+  assert.strictEqual(session.learnedCount(), 1, '学習済みの判定は残る');
+});
+
+test('previous でさかのぼれるのは直近 50 枚まで', function () {
+  var session = new Study.StudySession({ words: makeWords(60), requiredStreak: 5 });
+  for (var i = 0; i < 60; i++) session.skip();
+  var count = 0;
+  while (session.hasPrevious()) {
+    session.previous();
+    count++;
+  }
+  assert.strictEqual(count, 50);
+});
+
 test('stats は正答率と学習済み数を集計する', function () {
   var session = new Study.StudySession({ words: makeWords(2), requiredStreak: 1 });
   session.answer(true);
@@ -272,7 +328,7 @@ test('withCustom は言語ごとに全リストを返す', function () {
   assert.strictEqual(fr.lists[0].id, fr.defaultListId, '既定のリストが先頭に並んでいない');
 });
 
-test('自動再生・自動めくりの設定が補正される', function () {
+test('自動再生・自動送りの設定が補正される', function () {
   var settings = Storage.normalizeSettings({ theme: 'bogus', speech: false, autoAdvance: false, autoSeconds: 99 });
   assert.strictEqual(settings.theme, 'auto');
   assert.strictEqual(settings.speech, false);
@@ -281,8 +337,34 @@ test('自動再生・自動めくりの設定が補正される', function () {
 
   var defaults = Storage.normalizeSettings({});
   assert.strictEqual(defaults.speech, true, '読み上げの自動再生は既定でオン');
-  assert.strictEqual(defaults.autoAdvance, true, '自動めくりは既定でオン');
-  assert.strictEqual(defaults.autoSeconds, 4);
+  assert.strictEqual(defaults.autoAdvance, true, '自動送りは既定でオン');
+  assert.strictEqual(defaults.autoSeconds, 1);
+});
+
+test('自動送りの間隔は既定で 1 秒（読み上げ後）', function () {
+  assert.strictEqual(Storage.DEFAULT_SETTINGS.autoSeconds, 1);
+  assert.strictEqual(Storage.normalizeSettings({}).autoSeconds, 1);
+});
+
+test('自動送りの間隔は 0.5 秒きざみで 0.5 〜 20 秒', function () {
+  var seconds = function (value) {
+    return Storage.normalizeSettings({ autoSeconds: value }).autoSeconds;
+  };
+  assert.strictEqual(seconds(0.5), 0.5);
+  assert.strictEqual(seconds(2.5), 2.5);
+  assert.strictEqual(seconds(1.3), 1.5, '0.5 きざみに丸める');
+  assert.strictEqual(seconds(0.1), 0.5, '下限で止める');
+  assert.strictEqual(seconds(99), 20, '上限で止める');
+  assert.strictEqual(seconds('abc'), 1, '数値でなければ既定');
+});
+
+test('以前の保存（4 秒）は新しい既定の 1 秒に寄せる', function () {
+  // 版が無い保存 = 以前のもの。自分で選んだ値でなければ寄せる
+  assert.strictEqual(Storage.normalizeSettings({ autoSeconds: 4 }).autoSeconds, 1);
+  assert.strictEqual(Storage.normalizeSettings({ autoSeconds: 8 }).autoSeconds, 8,
+    '自分で選んだ値はそのまま');
+  assert.strictEqual(Storage.normalizeSettings({ version: 2, autoSeconds: 4 }).autoSeconds, 4,
+    '新しい保存の 4 秒はそのまま');
 });
 
 test('収録言語は 英語・中国語・スペイン語・フランス語 の 4 つ', function () {

@@ -96,7 +96,17 @@
     });
 
     this.queue = this.cards.slice();
+    // 「前の単語に戻る」ためにさかのぼれるよう、出し終えたカードを控えておく
+    this.history = [];
   }
+
+  // 履歴が無限に伸びないよう、さかのぼれる枚数には上限をつける
+  var HISTORY_LIMIT = 50;
+
+  StudySession.prototype._remember = function (card) {
+    this.history.push(card);
+    if (this.history.length > HISTORY_LIMIT) this.history.shift();
+  };
 
   StudySession.prototype.total = function () {
     return this.cards.length;
@@ -173,6 +183,7 @@
     var card = this.queue.shift();
     if (!card) return null;
 
+    this._remember(card);
     this.answeredCount++;
 
     if (isCorrect) {
@@ -208,8 +219,32 @@
   StudySession.prototype.skip = function () {
     var card = this.queue.shift();
     if (!card) return null;
+    this._remember(card);
     this.queue.splice(Math.min(REQUEUE_AFTER_CORRECT, this.queue.length), 0, card);
     return { card: card, learned: false, complete: false };
+  };
+
+  /** 「前の単語」に戻れるか */
+  StudySession.prototype.hasPrevious = function () {
+    return this.history.length > 0;
+  };
+
+  /**
+   * 直前に表示していた単語をもう一度いちばん前に出す（左スワイプ用）。
+   * 正解数・学習済みの判定はそのままで、キューの並びだけを戻す。
+   */
+  StudySession.prototype.previous = function () {
+    var card = this.history.pop();
+    if (!card) return null;
+
+    // 再出題待ちでキューに積み直されていたら、そこからは取り除いて先頭へ
+    var at = this.queue.indexOf(card);
+    if (at >= 0) this.queue.splice(at, 1);
+    this.queue.unshift(card);
+
+    // 戻ったのだからセッションはまだ終わっていない
+    this.finishedAt = null;
+    return card;
   };
 
   StudySession.prototype.stats = function () {

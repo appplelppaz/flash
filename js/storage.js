@@ -13,7 +13,13 @@
     stats: 'flashcards.stats.v1'
   };
 
+  // 設定の版。以前の保存を新しい既定に寄せるかどうかの判断に使う
+  var SETTINGS_VERSION = 2;
+  // 版 1 までの「自動送りの間隔」の既定値
+  var LEGACY_AUTO_SECONDS = 4;
+
   var DEFAULT_SETTINGS = {
+    version: SETTINGS_VERSION,
     wordCount: 20,            // 1 セッションで出題する単語数
     requiredStreak: 2,        // 学習済みと判定する連続正解回数
     direction: 'term-first',  // term-first | meaning-first | mixed
@@ -21,7 +27,7 @@
     theme: 'auto',            // auto | light | dark
     speech: true,             // 読み上げの自動再生
     autoAdvance: true,        // 自動めくり
-    autoSeconds: 4            // 自動めくりの間隔（秒）
+    autoSeconds: 1            // 読み上げが終わってから次を表示するまでの秒数
   };
 
   var DEFAULT_STATS = {
@@ -59,13 +65,30 @@
     return Math.min(max, Math.max(min, num));
   }
 
+  /** 0.5 秒きざみに丸めた実数（自動送りの間隔用） */
+  function clampStep(value, min, max, fallback) {
+    var num = parseFloat(value);
+    if (isNaN(num)) return fallback;
+    num = Math.round(num * 2) / 2;
+    return Math.min(max, Math.max(min, num));
+  }
+
   function oneOf(value, allowed, fallback) {
     return allowed.indexOf(value) >= 0 ? value : fallback;
   }
 
   function normalizeSettings(settings) {
     var s = settings || {};
+
+    // 以前は読み上げ後 4 秒だった。自分で選んだ値でなければ、
+    // 新しい既定（読み上げ後 1 秒）に寄せる。
+    var seconds = s.autoSeconds;
+    if (!s.version && seconds === LEGACY_AUTO_SECONDS) {
+      seconds = DEFAULT_SETTINGS.autoSeconds;
+    }
+
     return {
+      version: SETTINGS_VERSION,
       wordCount: clampInt(s.wordCount, 1, 500, DEFAULT_SETTINGS.wordCount),
       requiredStreak: clampInt(s.requiredStreak, 1, 10, DEFAULT_SETTINGS.requiredStreak),
       direction: oneOf(s.direction, ['term-first', 'meaning-first', 'mixed'], DEFAULT_SETTINGS.direction),
@@ -73,7 +96,7 @@
       theme: oneOf(s.theme, ['auto', 'light', 'dark'], DEFAULT_SETTINGS.theme),
       speech: s.speech !== false,
       autoAdvance: s.autoAdvance !== false,
-      autoSeconds: clampInt(s.autoSeconds, 1, 20, DEFAULT_SETTINGS.autoSeconds)
+      autoSeconds: clampStep(seconds, 0.5, 20, DEFAULT_SETTINGS.autoSeconds)
     };
   }
 
