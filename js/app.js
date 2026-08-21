@@ -416,21 +416,40 @@
     renderSteps();
   }
 
-  /** いま表示すべき段階までを描画する */
+  /** いま何段階目かを示す点。段階を切り替えても現在地が分かるようにする */
+  function renderStepDots() {
+    var dots = $('card-dots');
+    dots.innerHTML = '';
+    state.steps.forEach(function (step, index) {
+      var dot = document.createElement('span');
+      dot.className = 'dot' + (index === state.stepIndex ? ' is-on' : '');
+      dot.title = step.label;
+      dots.appendChild(dot);
+    });
+  }
+
+  /**
+   * いまの段階だけを描画する。
+   * 3 つを並べず 1 つずつ切り替えることで、そのとき見るべきものに集中でき、
+   * 1 つあたりの文字も大きく取れる。
+   */
   function renderSteps() {
     var container = $('card-steps');
+    var step = state.steps[state.stepIndex];
     container.innerHTML = '';
 
-    state.steps.slice(0, state.stepIndex + 1).forEach(function (step, index) {
+    if (step) {
       var div = document.createElement('div');
-      div.className = 'card-step' + (index === state.stepIndex ? ' is-current' : '');
+      div.className = 'card-step is-current';
       div.dataset.key = step.key;
       div.innerHTML =
         '<span class="step-label">' + step.label + '</span>' +
         '<p class="step-text">' + escapeHtml(step.text) + '</p>' +
         (step.reading ? '<p class="step-reading">' + escapeHtml(step.reading) + '</p>' : '');
       container.appendChild(div);
-    });
+    }
+
+    renderStepDots();
 
     var isLast = state.stepIndex >= state.steps.length - 1;
     $('card-hint').textContent = isLast
@@ -445,7 +464,6 @@
     $('fav-btn').textContent = (isFav ? '★' : '☆') + ' お気に入り';
 
     // 自動再生。読み上げが終わってから自動めくりの計測を始める
-    var step = state.steps[state.stepIndex];
     clearAutoTimer();
     if (state.settings.speech && step && step.speech) {
       speakSequence(step.speech, scheduleAuto);
