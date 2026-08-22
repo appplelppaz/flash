@@ -266,7 +266,6 @@ test('設定は範囲外の値を補正する', function () {
   assert.strictEqual(Storage.normalizeSettings({ wordCount: 0 }).wordCount, 1);
   assert.strictEqual(Storage.normalizeSettings({ wordCount: 9999 }).wordCount, 500);
   assert.strictEqual(Storage.normalizeSettings({ wordCount: 'abc' }).wordCount, 20);
-  assert.strictEqual(Storage.normalizeSettings({ requiredStreak: 99 }).requiredStreak, 10);
   assert.strictEqual(Storage.normalizeSettings({ direction: 'bogus' }).direction, 'term-first');
 });
 

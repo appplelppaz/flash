@@ -299,15 +299,29 @@
     renderDeck();
   }
 
+  /**
+   * 出題の対象になる単語。
+   * 〇 をつけた（＝学習済みの）単語は、もう出さないので必ず外す。
+   */
   function scopeWords() {
     var list = state.list;
     if (!list) return [];
-    if (state.scope === 'weak') return Study.weakWords(list.words, Storage.loadProgress());
-    if (state.scope === 'fav') {
+    var progress = Storage.loadProgress();
+
+    var pool;
+    if (state.scope === 'weak') {
+      pool = Study.weakWords(list.words, progress);
+    } else if (state.scope === 'fav') {
       var favorites = Storage.loadFavorites();
-      return list.words.filter(function (word) { return favorites[word.id]; });
+      pool = list.words.filter(function (word) { return favorites[word.id]; });
+    } else {
+      pool = list.words;
     }
-    return list.words;
+
+    return pool.filter(function (word) {
+      var stat = progress[word.id];
+      return !(stat && stat.learned);
+    });
   }
 
   function renderDeck() {
@@ -381,7 +395,8 @@
 
     state.session = new Study.StudySession({
       words: words,
-      requiredStreak: state.settings.requiredStreak,
+      // 〇 をつけたらその場で学習済み（もう出さない）
+      requiredStreak: 1,
       direction: state.settings.direction
     });
     state.autoPaused = false;
@@ -448,8 +463,6 @@
     }
 
     renderStepDots();
-
-    $('prev-word-btn').disabled = !state.session.hasPrevious();
 
     var card = state.session.current();
     var favorites = Storage.loadFavorites();
@@ -583,6 +596,11 @@
     else renderCard();
   }
 
+  /**
+   * セットを終えたときの処理。
+   * 指定した語数すべてに 〇 がついたら、まだ残っている単語で次のセットを始める。
+   * もう残っていなければ結果を出す。
+   */
   function finishSession() {
     var session = state.session;
     if (!session) return;
@@ -592,6 +610,12 @@
 
     var stats = session.stats();
     var saved = Storage.recordSession(session.cards, stats);
+
+    // 学習済みは scopeWords() から外れるので、残りがあれば次のセットへ
+    if (state.screen === 'study' && scopeWords().length) {
+      startSession();
+      return;
+    }
 
     $('result-sub').textContent = (state.list ? state.list.name : state.deck.name) +
       ' · ' + SCOPE_LABELS[state.scope];
@@ -634,8 +658,6 @@
   function armMark(dir) {
     $('correct-btn').classList.toggle('is-armed', dir === 'up');
     $('wrong-btn').classList.toggle('is-armed', dir === 'down');
-    $('prev-word-btn').classList.toggle('is-armed', dir === 'left');
-    $('next-word-btn').classList.toggle('is-armed', dir === 'right');
   }
 
   function dragCard(dx, dy) {
@@ -879,7 +901,6 @@
 
   function fillSettingsForm() {
     $('set-word-count').value = state.settings.wordCount;
-    $('set-streak').value = state.settings.requiredStreak;
     $('set-direction').value = state.settings.direction;
     $('set-order').value = state.settings.order;
     $('set-theme').value = state.settings.theme;
@@ -891,7 +912,6 @@
   function applySettingsForm() {
     state.settings = Storage.saveSettings({
       wordCount: $('set-word-count').value,
-      requiredStreak: $('set-streak').value,
       direction: $('set-direction').value,
       order: $('set-order').value,
       theme: $('set-theme').value,
@@ -1007,14 +1027,6 @@
     $('wrong-btn').addEventListener('click', function () {
       if (swipeConsumedClick()) return;
       judge(false);
-    });
-    $('prev-word-btn').addEventListener('click', function () {
-      if (swipeConsumedClick()) return;
-      prevWord();
-    });
-    $('next-word-btn').addEventListener('click', function () {
-      if (swipeConsumedClick()) return;
-      nextWord();
     });
     $('auto-btn').addEventListener('click', toggleAuto);
 

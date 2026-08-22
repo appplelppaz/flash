@@ -96,29 +96,20 @@
         </button>
       </div>
 
-      <!-- スワイプを受け取る面。アイコンの位置がそのままスワイプの向きになる -->
+      <!-- スワイプを受け取る面。〇 は上・✕ は下にあり、位置がそのままスワイプの向きになる
+           （左右の移動はスワイプのみ。アイコンは置かず、そのぶんカードを広く取る） -->
       <div class="study-body" id="study-body">
-        <button type="button" class="edge" id="prev-word-btn" aria-label="前の単語に戻る">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+        <button type="button" class="mark mark-correct" id="correct-btn" aria-label="わかった">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
         </button>
 
-        <div class="stack">
-          <button type="button" class="mark mark-correct" id="correct-btn" aria-label="わかった">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
-          </button>
-
-          <div class="card" id="card" role="button" tabindex="0" aria-label="次を表示">
-            <div class="card-steps" id="card-steps"></div>
-            <div class="card-dots" id="card-dots" aria-hidden="true"></div>
-          </div>
-
-          <button type="button" class="mark mark-wrong" id="wrong-btn" aria-label="わからなかった">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
-          </button>
+        <div class="card" id="card" role="button" tabindex="0" aria-label="次を表示">
+          <div class="card-steps" id="card-steps"></div>
+          <div class="card-dots" id="card-dots" aria-hidden="true"></div>
         </div>
 
-        <button type="button" class="edge" id="next-word-btn" aria-label="次の単語に進む">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        <button type="button" class="mark mark-wrong" id="wrong-btn" aria-label="わからなかった">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
         </button>
       </div>
 
@@ -198,11 +189,6 @@
       <div class="block">
         <label class="block-label" for="set-word-count">出題する単語数</label>
         <input type="number" id="set-word-count" min="1" max="500" step="1" inputmode="numeric">
-      </div>
-
-      <div class="block">
-        <label class="block-label" for="set-streak">学習済みと判定する連続正解回数</label>
-        <input type="number" id="set-streak" min="1" max="10" step="1" inputmode="numeric">
       </div>
 
       <div class="block">

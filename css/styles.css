@@ -493,8 +493,9 @@ kbd {
 @media (hover: none) { kbd { display: none; } }
 
 /* ---------- 学習画面 ----------
-   画面に出すのは 単語（または訳・例文）と、意味の分かるアイコンだけ。
-   〇 は上・✕ は下・‹ › は左右にあり、位置がそのままスワイプの向きになる。
+   画面に出すのは 単語（または訳・例文）と、〇 / ✕ のアイコンだけ。
+   〇 は上・✕ は下にあり、位置がそのままスワイプの向きになる。
+   前後の単語への移動は左右スワイプで行い、アイコンは置かない。
    iPhone 15 Pro の横画面（852 × 393 相当）で画面いっぱいに収まるのが基準。
    ------------------------------------------------------------------ */
 
@@ -581,22 +582,14 @@ body.is-study .screen-study {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: stretch;
-  gap: 6px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 5px;
   -webkit-tap-highlight-color: transparent;
 }
 
 /* スワイプがページや内側のスクロールに取られないよう、面全体で既定の指の動きを止める */
 .study-body,
 .study-body * { touch-action: none; }
-
-.stack {
-  min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 5px;
-}
 
 /* 〇 と ✕ */
 
@@ -631,36 +624,6 @@ body.is-study .screen-study {
 .mark.is-armed { transform: scale(1.06); }
 .mark-correct.is-armed { background: var(--ok-bg); }
 .mark-wrong.is-armed { background: var(--ng-bg); }
-
-/* 左右の送り */
-
-.edge {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  padding: 0;
-  border: 0;
-  border-radius: 13px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: background .15s ease, color .15s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.edge svg {
-  width: 22px;
-  height: 22px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.edge:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-.edge:disabled { opacity: .28; cursor: default; }
-.edge.is-armed { background: var(--surface-2); color: var(--text); }
 
 /* ---- カード ---- */
 
@@ -793,7 +756,6 @@ body.is-study .screen-study {
 
   .mark { padding: 3px; border-radius: 11px; }
   .mark svg { width: 22px; height: 22px; }
-  .edge { width: 36px; }
 
   .card { padding: 6px 14px; border-radius: 15px; }
 
@@ -807,11 +769,9 @@ body.is-study .screen-study {
 
 /* 縦に余裕がある端末では、そのぶん大きく見せる */
 @media (min-width: 620px) and (min-height: 600px) {
-  .study-body { gap: 10px; }
-  .stack { gap: 8px; }
+  .study-body { gap: 8px; }
   .mark { padding: 12px; }
   .mark svg { width: 32px; height: 32px; }
-  .edge { width: 54px; }
   .card { padding: 20px; }
 }
 

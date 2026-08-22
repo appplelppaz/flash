@@ -21,7 +21,6 @@
   var DEFAULT_SETTINGS = {
     version: SETTINGS_VERSION,
     wordCount: 20,            // 1 セッションで出題する単語数
-    requiredStreak: 2,        // 学習済みと判定する連続正解回数
     direction: 'term-first',  // term-first | meaning-first | mixed
     order: 'unlearned-first', // unlearned-first | random | weak-first
     theme: 'auto',            // auto | light | dark
@@ -90,7 +89,6 @@
     return {
       version: SETTINGS_VERSION,
       wordCount: clampInt(s.wordCount, 1, 500, DEFAULT_SETTINGS.wordCount),
-      requiredStreak: clampInt(s.requiredStreak, 1, 10, DEFAULT_SETTINGS.requiredStreak),
       direction: oneOf(s.direction, ['term-first', 'meaning-first', 'mixed'], DEFAULT_SETTINGS.direction),
       order: oneOf(s.order, ['unlearned-first', 'random', 'weak-first'], DEFAULT_SETTINGS.order),
       theme: oneOf(s.theme, ['auto', 'light', 'dark'], DEFAULT_SETTINGS.theme),
