@@ -400,6 +400,7 @@
       direction: state.settings.direction
     });
     state.autoPaused = false;
+    $('card').classList.remove('is-paused');
 
     showScreen('study');
     renderAutoButton();
@@ -463,20 +464,46 @@
     }
 
     renderStepDots();
+    $('card').classList.toggle('is-paused', state.autoPaused);
 
     var card = state.session.current();
     var favorites = Storage.loadFavorites();
     $('fav-btn').setAttribute('aria-pressed',
       card && favorites[card.word.id] === true ? 'true' : 'false');
 
-    // 自動再生。読み上げが終わってから自動めくりの計測を始める
+    playStep();
+  }
+
+  /**
+   * いまの段階を再生する。読み上げてから自動送りの計測を始める。
+   * 一時停止中は読み上げも計測もせず、その場で止めたままにする。
+   */
+  function playStep() {
     clearAutoTimer();
+
+    if (state.autoPaused) {
+      stopSpeaking();
+      return;
+    }
+
+    var step = state.steps && state.steps[state.stepIndex];
     if (state.settings.speech && step && step.speech) {
       speakSequence(step.speech, scheduleAuto);
     } else {
       stopSpeaking();
       scheduleAuto();
     }
+  }
+
+  /**
+   * タップでその場を一時停止し、もう一度タップで再開する。
+   * 止めている間は読み上げも自動送りも動かず、表示はそのまま残る。
+   */
+  function togglePause() {
+    state.autoPaused = !state.autoPaused;
+    $('card').classList.toggle('is-paused', state.autoPaused);
+    renderAutoButton();
+    playStep();
   }
 
   // ---------- 自動めくり ----------
@@ -530,13 +557,9 @@
       // 設定でオフの場合はこの場でオンにする
       state.settings = Storage.saveSettings(
         Object.assign({}, state.settings, { autoAdvance: true }));
-      state.autoPaused = false;
-    } else {
-      state.autoPaused = !state.autoPaused;
+      state.autoPaused = true; // 直後の togglePause で解除される
     }
-    renderAutoButton();
-    if (state.autoPaused) clearAutoTimer();
-    else scheduleAuto();
+    togglePause();
   }
 
   /**
@@ -1010,14 +1033,16 @@
     $('open-list-btn').addEventListener('click', openList);
 
     // 学習画面
+    // タップでその場を一時停止、もう一度タップで再開
     $('card').addEventListener('click', function () {
       if (swipeConsumedClick()) return;
-      advance();
+      togglePause();
     });
     $('card').addEventListener('keydown', function (event) {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        advance();
+        event.stopPropagation(); // 画面全体の Space（次の段階）と重ねない
+        togglePause();
       }
     });
     $('correct-btn').addEventListener('click', function () {
