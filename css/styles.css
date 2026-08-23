@@ -644,6 +644,21 @@ body.is-study .screen-study {
 
 .card.is-dragging { transition: none; }
 
+/* 一時停止中。角に小さな ⏸ を出して、止まっていることを示す */
+.card.is-paused { position: relative; }
+
+.card.is-paused::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 11px;
+  height: 13px;
+  border-left: 3px solid var(--muted);
+  border-right: 3px solid var(--muted);
+  opacity: .7;
+}
+
 /* 判定したことは、文字ではなく色のまたたきで返す */
 .card.is-correct { animation: flash-ok .32s ease; }
 .card.is-wrong { animation: flash-ng .32s ease; }
