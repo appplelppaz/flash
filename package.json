@@ -1,11 +1,12 @@
 {
   "name": "flashcards",
-  "version": "1.0.0",
-  "description": "言語別の単語帳から任意の語数を選び、全部が学習済みになるまで繰り返すフラッシュカードアプリ",
+  "version": "2.0.0",
+  "description": "Netflix 字幕から作った語彙リストで学べる、スワイプ操作のフラッシュカード（オフライン対応 PWA）",
   "private": true,
   "scripts": {
     "test": "node --test",
-    "start": "python3 -m http.server 8080"
+    "start": "python3 -m http.server 8080",
+    "icons": "python3 tools/make-icons.py"
   },
   "license": "MIT"
 }
