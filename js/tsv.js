@@ -5,7 +5,11 @@
  *
  *     word <TAB> 日本語訳 <TAB> example <TAB> 例文の日本語訳
  *
- * を読み込む。取りこぼしを減らすため、次の入力も受け付ける。
+ * 5 列目があれば「例文の中の、リストに無い語（おまけの語）」として読む。
+ *
+ *     ... <TAB> shipment=積み荷; harbour=港
+ *
+ * 取りこぼしを減らすため、次の入力も受け付ける。
  *
  * - 抽出器の候補ファイル（kind/word/reading/ja/example/example_ja/count/first_at）
  * - 2 列（単語・訳のみ）や 3 列（例文の訳なし）
@@ -42,6 +46,30 @@
   }
 
   /**
+   * 「語=訳; 語=訳」を [{term, meaning}] にする。
+   * 訳が無ければ meaning は空文字。
+   */
+  function parseExtras(cell) {
+    if (!cell) return [];
+    return cell.split(/[;；]/).map(function (part) {
+      var t = part.trim();
+      if (!t) return null;
+      var at = t.indexOf('=');
+      if (at === -1) at = t.indexOf('＝');
+      return at === -1
+        ? { term: t, meaning: '' }
+        : { term: t.slice(0, at).trim(), meaning: t.slice(at + 1).trim() };
+    }).filter(function (x) { return x && x.term; });
+  }
+
+  function stringifyExtras(extras) {
+    if (!extras || !extras.length) return '';
+    return extras.map(function (e) {
+      return e.meaning ? e.term + '=' + e.meaning : e.term;
+    }).join('; ');
+  }
+
+  /**
    * @param {string} text
    * @returns {{cards: Array, skipped: Array, delimiter: string, dropped: number}}
    */
@@ -62,17 +90,18 @@
 
       if (isCandidateRow(cells)) {
         // kind / word / reading / ja / example / example_ja / ...
-        cells = [cells[1], cells[3], cells[4] || '', cells[5] || ''];
+        cells = [cells[1], cells[3], cells[4] || '', cells[5] || '', ''];
       } else if (n < 3 && looksLikeHeader(cells)) {
         continue;
-      } else if (cells.length > 4) {
-        cells = cells.slice(0, 4);
+      } else if (cells.length > 5) {
+        cells = cells.slice(0, 5);
       }
 
       var term = cells[0] || '';
       var meaning = cells[1] || '';
       var example = cells[2] || '';
       var exampleJa = cells[3] || '';
+      var extras = parseExtras(cells[4] || '');
 
       if (!term) {
         skipped.push({ line: n + 1, text: raw, reason: '単語の列が空' });
@@ -90,21 +119,26 @@
         if (!prev.example && example) {
           prev.example = example;
           prev.exampleJa = exampleJa;
+          prev.extras = extras;
         }
         dropped++;
         continue;
       }
       seen[key] = cards.length;
-      cards.push({ term: term, reading: '', meaning: meaning, example: example, exampleJa: exampleJa });
+      cards.push({ term: term, reading: '', meaning: meaning, example: example,
+                   exampleJa: exampleJa, extras: extras });
     }
 
     return { cards: cards, skipped: skipped, delimiter: delimiter, dropped: dropped };
   }
 
-  /** カードの配列を 4 列 TSV に戻す（書き出し用） */
+  /** カードの配列を TSV に戻す（おまけの語があれば 5 列目に付ける） */
   function stringify(cards) {
+    var hasExtras = cards.some(function (c) { return c.extras && c.extras.length; });
     return cards.map(function (c) {
-      return [c.term, c.meaning, c.example || '', c.exampleJa || ''].join('\t');
+      var row = [c.term, c.meaning, c.example || '', c.exampleJa || ''];
+      if (hasExtras) row.push(stringifyExtras(c.extras));
+      return row.join('\t');
     }).join('\n') + '\n';
   }
 
@@ -175,6 +209,8 @@
   var api = {
     parse: parse,
     stringify: stringify,
+    parseExtras: parseExtras,
+    stringifyExtras: stringifyExtras,
     detectLang: detectLang,
     nameFromFile: nameFromFile
   };

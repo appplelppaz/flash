@@ -181,6 +181,7 @@
         <div class="line meaning" id="line-meaning"></div>
         <div class="line example" id="line-example"></div>
         <div class="line example-ja" id="line-example-ja"></div>
+        <div class="line links" id="line-links"></div>
       </div>
       <div class="paused-mark" id="paused-mark"><svg><use href="#i-play"/></svg></div>
     </article>
@@ -262,6 +263,11 @@
       <input type="checkbox" id="set-show-example-ja">
       <i></i>
     </label>
+    <label class="switch">
+      <span>例文のおまけの語も覚える</span>
+      <input type="checkbox" id="set-links" checked>
+      <i></i>
+    </label>
 
     <h2 class="section-label">読み上げ</h2>
     <label class="switch">
@@ -325,6 +331,7 @@
 <script src="js/session.js"></script>
 <script src="js/library.js"></script>
 <script src="js/speech.js"></script>
+<script src="js/links.js"></script>
 <script src="js/gesture.js"></script>
 <script src="js/app.js"></script>
 </body>

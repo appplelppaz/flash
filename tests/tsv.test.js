@@ -7,7 +7,7 @@ test('4 列のタブ区切りを読む', () => {
   const res = tsv.parse('go\t行く\tI go home.\t家に帰る。\nsee\t見る\tI see it.\tそれが見える。');
   assert.strictEqual(res.cards.length, 2);
   assert.deepStrictEqual(res.cards[0], {
-    term: 'go', reading: '', meaning: '行く', example: 'I go home.', exampleJa: '家に帰る。'
+    term: 'go', reading: '', meaning: '行く', example: 'I go home.', exampleJa: '家に帰る。', extras: []
   });
   assert.strictEqual(res.delimiter, '\t');
 });
@@ -92,11 +92,51 @@ test('書き出したものを読み直すと元に戻る', () => {
   assert.deepStrictEqual(round, cards);
 });
 
-test('見本のリストが 4 列である', () => {
+test('見本のリストが読める', () => {
+  const fs = require('node:fs');
+  const text = fs.readFileSync(__dirname + '/../vocab/en_sample.tsv', 'utf8');
+  assert.ok(tsv.parse(text).cards.length >= 10);
+});
+
+// --- 5 列目：例文の中の、リストに無い語 ---
+
+test('5 列目のおまけの語を読む', () => {
+  const res = tsv.parse('offer\t申し出\tTheir offer hid a threat.\t彼らの申し出は脅しを隠していた。\tthreat=脅し; hide=隠す');
+  assert.deepStrictEqual(res.cards[0].extras, [
+    { term: 'threat', meaning: '脅し' },
+    { term: 'hide', meaning: '隠す' }
+  ]);
+});
+
+test('4 列だけの古いリストも読める（おまけの語は空）', () => {
+  const res = tsv.parse('go\t行く\tI go home.\t家に帰る。');
+  assert.deepStrictEqual(res.cards[0].extras, []);
+});
+
+test('訳の無いおまけの語、全角のセミコロンと等号も受ける', () => {
+  assert.deepStrictEqual(tsv.parseExtras('threat'), [{ term: 'threat', meaning: '' }]);
+  assert.deepStrictEqual(tsv.parseExtras('a＝あ；b=い'), [
+    { term: 'a', meaning: 'あ' },
+    { term: 'b', meaning: 'い' }
+  ]);
+  assert.deepStrictEqual(tsv.parseExtras(''), []);
+});
+
+test('おまけの語つきで書き出して、読み直すと元に戻る', () => {
+  const line = 'offer\t申し出\tTheir offer hid a threat.\t彼らの申し出は脅しを隠していた。\tthreat=脅し; hide=隠す';
+  const cards = tsv.parse(line).cards;
+  assert.deepStrictEqual(tsv.parse(tsv.stringify(cards)).cards, cards);
+});
+
+test('おまけの語が誰にも無ければ 4 列で書き出す', () => {
+  const cards = tsv.parse('go\t行く\tI go home.\t家に帰る。').cards;
+  assert.strictEqual(tsv.stringify(cards).trim().split('\t').length, 4);
+});
+
+test('見本のリストが 5 列である', () => {
   const fs = require('node:fs');
   const text = fs.readFileSync(__dirname + '/../vocab/en_sample.tsv', 'utf8');
   text.split('\n').filter(Boolean).forEach((line, i) => {
-    assert.strictEqual(line.split('\t').length, 4, (i + 1) + ' 行目の列数が 4 でない');
+    assert.strictEqual(line.split('\t').length, 5, (i + 1) + ' 行目の列数が 5 でない');
   });
-  assert.ok(tsv.parse(text).cards.length >= 10);
 });

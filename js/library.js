@@ -97,7 +97,8 @@
       return loadScript(b.src).then(function () {
         var raw = (global.WordLists && global.WordLists[id] && global.WordLists[id].words) || [];
         var out = raw.map(function (w) {
-          return { term: w[0], reading: w[1] || '', meaning: w[2] || '', example: w[3] || '', exampleJa: w[4] || '' };
+          return { term: w[0], reading: w[1] || '', meaning: w[2] || '',
+                   example: w[3] || '', exampleJa: w[4] || '', extras: [] };
         });
         cardCache[id] = out;
         return out;
@@ -106,7 +107,8 @@
     return store.get('cards:' + id).then(function (rows) {
       var out = (rows || []).map(function (w) {
         return Array.isArray(w)
-          ? { term: w[0], reading: w[1] || '', meaning: w[2] || '', example: w[3] || '', exampleJa: w[4] || '' }
+          ? { term: w[0], reading: w[1] || '', meaning: w[2] || '', example: w[3] || '',
+              exampleJa: w[4] || '', extras: global.Flash.tsv.parseExtras(w[5] || '') }
           : w;
       });
       cardCache[id] = out;
@@ -116,7 +118,8 @@
 
   function packCards(list) {
     return list.map(function (c) {
-      return [c.term, c.reading || '', c.meaning, c.example || '', c.exampleJa || ''];
+      return [c.term, c.reading || '', c.meaning, c.example || '', c.exampleJa || '',
+              global.Flash.tsv.stringifyExtras(c.extras)];
     });
   }
 

@@ -7,7 +7,7 @@
 
   var F = global.Flash;
   var store = F.store, library = F.library, speech = F.speech, gesture = F.gesture;
-  var Session = F.session, tsv = F.tsv;
+  var Session = F.session, tsv = F.tsv, links = F.links;
 
   var $ = function (id) { return document.getElementById(id); };
   var el = function (tag, cls, text) {
@@ -25,6 +25,7 @@
     order: 'listed',
     direction: 'example-first',
     showExampleJa: false,
+    highlightLinks: true,
     tts: true,
     ttsPlan: 'full',
     rate: 1,
@@ -519,6 +520,7 @@
     stages: [],
     stage: 0,
     paused: false,
+    links: [],
     speaking: false,
     timer: null,
     seq: 0,
@@ -597,6 +599,43 @@
     return cur ? cur.card : null;
   }
 
+  /**
+   * 例文の中の「おまけの語」——リストには入っていないが、
+   * この文のついでに覚えてしまいたい語（TSV の 5 列目）。
+   */
+  function linksFor(id, card) {
+    if (!settings.highlightLinks || !card.example || !card.extras || !card.extras.length) return [];
+    return links.findExtras(card.example, card.extras, deck.meta.lang);
+  }
+
+  /** 例文を描く。おまけの語には下線を引く */
+  function paintExample(card, hits) {
+    var node = $('line-example');
+    node.textContent = '';
+    var text = card.example || '';
+    if (!text) return;
+    if (!settings.highlightLinks || !hits || !hits.length) {
+      node.textContent = text;
+      return;
+    }
+    links.split(text, hits).forEach(function (part) {
+      if (part.id === null) node.appendChild(document.createTextNode(part.text));
+      else node.appendChild(el('span', 'link', part.text));
+    });
+  }
+
+  /** 「この例文でついでに覚える語」の行 */
+  function paintLinkNotes(hits) {
+    var node = $('line-links');
+    node.textContent = '';
+    hits.forEach(function (h) {
+      var item = el('span');
+      item.appendChild(el('b', null, h.term));
+      item.appendChild(document.createTextNode(h.meaning || ''));
+      node.appendChild(item);
+    });
+  }
+
   function renderCard(fresh) {
     var cur = st.session && st.session.current();
     if (!cur) return finishStudy();
@@ -610,8 +649,9 @@
     $('line-term').textContent = c.term;
     $('line-reading').textContent = c.reading || '';
     $('line-meaning').textContent = c.meaning;
-    $('line-example').textContent = c.example || '';
     $('line-example-ja').textContent = c.exampleJa || '';
+    if (fresh) st.links = linksFor(cur.id, c);
+    paintExample(c, st.links);
 
     var shown = st.stages.slice(0, st.stage + 1);
     ['term', 'meaning', 'example'].forEach(function (role) {
@@ -631,6 +671,13 @@
     var ejReady = shown.indexOf('example') !== -1 &&
       (settings.direction !== 'example-first' || st.stage > 0);
     if (settings.showExampleJa && c.exampleJa && ejReady) ejNode.classList.add('is-sub');
+
+    // 例文の中で見つけた他の単語は、訳まで進んだところで意味を添える
+    var linkNode = $('line-links');
+    var showLinks = settings.highlightLinks && st.links && st.links.length &&
+      shown.indexOf('example') !== -1 && st.stage === st.stages.length - 1;
+    linkNode.classList.toggle('show', !!showLinks);
+    if (showLinks) paintLinkNotes(st.links);
 
     // 点と進み具合
     var dots = $('dots');
@@ -934,6 +981,7 @@
     $('set-order').value = settings.order;
     $('set-direction').value = settings.direction;
     $('set-show-example-ja').checked = settings.showExampleJa;
+    $('set-links').checked = settings.highlightLinks;
     $('set-tts').checked = settings.tts;
     $('set-tts-plan').value = settings.ttsPlan;
     $('set-rate').value = settings.rate;
@@ -998,6 +1046,7 @@
     $('set-order').addEventListener('change', function (e) { settings.order = e.target.value; saveSettings(); });
     $('set-direction').addEventListener('change', function (e) { settings.direction = e.target.value; saveSettings(); });
     $('set-show-example-ja').addEventListener('change', function (e) { settings.showExampleJa = e.target.checked; saveSettings(); });
+    $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
     $('set-tts').addEventListener('change', function (e) { settings.tts = e.target.checked; saveSettings(); updateSoundIcon(); });
     $('set-tts-plan').addEventListener('change', function (e) { settings.ttsPlan = e.target.value; saveSettings(); });
     $('set-rate').addEventListener('input', function (e) {
