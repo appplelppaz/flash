@@ -498,7 +498,9 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .stage {
   position: relative;
   flex: 1;
+  min-height: 0;
   display: grid;
+  grid-template-rows: 100%;
   place-items: center;
   padding: 0 calc(16px + var(--safe-r)) 0 calc(16px + var(--safe-l));
   overflow: hidden;
@@ -509,6 +511,8 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
   width: 100%;
   max-width: 640px;
   height: 100%;
+  min-height: 0;
+  max-height: 100%;
   display: grid;
   place-items: center;
   border-radius: 24px;
@@ -522,38 +526,48 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: max(6px, calc(var(--lead) * .17));
   width: 100%;
-  padding: 8px 4px;
+  padding: 4px 2px;
   text-align: center;
 }
 
 .line { display: none; width: 100%; word-break: break-word; overflow-wrap: anywhere; }
 .line.is-lead, .line.is-sub { display: block; }
-
-/* いま見る行だけを大きく、済んだ行は小さく残す */
 .line.is-sub { color: var(--muted); font-weight: 520; }
 
-.line.term.is-lead { font-size: clamp(30px, 9vw, 58px); font-weight: 660; letter-spacing: -.01em; line-height: 1.15; }
-.line.term.is-sub { font-size: clamp(17px, 4.4vw, 24px); }
-.line.meaning.is-lead { font-size: clamp(21px, 6vw, 36px); font-weight: 580; line-height: 1.35; }
-.line.meaning.is-sub { font-size: clamp(14px, 3.7vw, 19px); }
-.line.example.is-lead { font-size: clamp(17px, 4.6vw, 27px); line-height: 1.5; }
-.line.example.is-sub { font-size: clamp(13px, 3.4vw, 17px); }
-.line.reading { font-size: clamp(13px, 3.4vw, 18px); color: var(--muted); margin-top: -8px; }
-.line.example-ja { font-size: clamp(12px, 3.2vw, 16px); color: var(--muted); line-height: 1.6; }
+/*
+  文字の大きさは JS が測って決める（fitCard）。
+  --lead に「いま見る行」の大きさが入り、ほかの行はそこから比で決まる。
+  カードの空きいっぱいまで大きくするので、横画面でも小さくならない。
+*/
+.card {
+  --lead: 40px;
+  --sub: max(13px, calc(var(--lead) * .38));
+  --tiny: max(11px, calc(var(--lead) * .3));
+}
 
-/* 例文の中に出てくる、同じリストの他の単語 */
+.line.is-lead { font-size: var(--lead); }
+.line.is-sub { font-size: var(--sub); }
+
+.line.term.is-lead { font-weight: 660; letter-spacing: -.01em; line-height: 1.14; }
+.line.meaning.is-lead { font-size: calc(var(--lead) * .92); font-weight: 580; line-height: 1.32; }
+.line.example.is-lead { line-height: 1.42; }
+.line.example.is-sub { line-height: 1.45; }
+
+.line.reading { font-size: var(--tiny); color: var(--muted); margin-top: calc(var(--lead) * -.14); }
+.line.example-ja { font-size: var(--tiny); color: var(--muted); line-height: 1.55; }
+
+/* 例文の中に出てくる、リストに無い語（おまけの語） */
 .line .link {
   color: inherit;
-  border-bottom: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  padding-bottom: 1px;
+  border-bottom: max(2px, .055em) solid color-mix(in srgb, var(--accent) 60%, transparent);
+  padding-bottom: .06em;
 }
-.line.is-lead .link { border-bottom-width: 3px; }
 .line.links {
   display: none;
-  font-size: clamp(11px, 3vw, 14px);
-  line-height: 1.9;
+  font-size: var(--tiny);
+  line-height: 1.8;
   color: var(--muted);
 }
 .line.links.show { display: block; }
@@ -565,9 +579,6 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .card.dir-ef .line.example { order: -2; }
 .card.dir-ef .line.example-ja { order: -1; }
 .card.dir-ef .line.links { order: 1; }
-
-/* 例文から始めるときは、例文がその場の主役なので大きく出す */
-.card.dir-ef .line.example.is-lead { font-size: clamp(19px, 5.4vw, 31px); font-weight: 540; }
 
 .paused-mark {
   position: absolute;
@@ -648,6 +659,7 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .coach-box h2 { margin: 0 0 14px; font-size: 16px; }
 .coach-box ul { list-style: none; margin: 0 0 18px; padding: 0; }
 .coach-box li { display: flex; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.coach-box .primary { width: 100%; }
 .coach-box li span { color: var(--muted); }
 
 /* ---- 結果 ---------------------------------------------------------- */
@@ -729,16 +741,91 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 
 /* ---- 横画面（iPhone を横に持ったとき）------------------------------- */
 
-@media (orientation: landscape) and (max-height: 500px) {
-  .study-top { padding-top: calc(var(--safe-t) + 4px); }
-  .line.term.is-lead { font-size: clamp(24px, 8vh, 46px); }
-  .line.meaning.is-lead { font-size: clamp(17px, 5.4vh, 28px); }
-  .line.example.is-lead { font-size: clamp(14px, 4.4vh, 22px); }
-  .card.dir-ef .line.example.is-lead { font-size: clamp(16px, 5vh, 25px); }
-  .card-inner { gap: 8px; }
-  .controls { gap: 34px; padding-bottom: 4px; }
-  .dots { padding: 2px 0 6px; }
-  .swipe-cue { width: 46px; height: 46px; font-size: 22px; }
+/* ---- 横画面（iPhone を横に持ったとき）-------------------------------
+   上下のバーをカードに重ねて、カードに画面の高さを全部渡す。
+   操作アイコンは親指の届く左右の端へ寄せる。
+   -------------------------------------------------------------------- */
+
+@media (orientation: landscape) and (max-height: 540px) {
+  /* .on を必ず付ける（付けないと隠れているはずの学習画面まで出てしまう） */
+  .view.study.on { display: block; position: relative; }
+
+  /* 上のバーは重ねて置く。高さを取らない */
+  .study-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    gap: 10px;
+    padding: calc(var(--safe-t) + 5px) calc(10px + var(--safe-r)) 0 calc(10px + var(--safe-l));
+  }
+  .study-top .icon { width: 36px; height: 36px; margin: -4px; font-size: 18px; }
+  .study-count { font-size: 11px; min-width: 38px; }
+
+  /* カードは画面いっぱい。左右は操作アイコンのぶんだけ空ける */
+  .card { max-width: none; }
+  .stage {
+    position: absolute;
+    inset: 0;
+    padding:
+      calc(var(--safe-t) + 30px)
+      calc(54px + var(--safe-r))
+      calc(20px + var(--safe-b))
+      calc(54px + var(--safe-l));
+  }
+
+  /* 下のバーは枠だけにして、中身を端へ配る */
+  .study-bottom { position: absolute; inset: 0; padding: 0; pointer-events: none; z-index: 2; }
+
+  .study-bottom .controls {
+    position: absolute;
+    right: calc(6px + var(--safe-r));
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: column;
+    gap: 14px;
+    padding: 0;
+    pointer-events: auto;
+  }
+  .study-bottom .controls .icon { width: 40px; height: 40px; margin: 0; font-size: 19px; }
+
+  .study-bottom .dots {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(8px + var(--safe-b));
+    padding: 0;
+  }
+  .study-bottom .timer {
+    position: absolute;
+    left: var(--safe-l);
+    right: var(--safe-r);
+    bottom: calc(1px + var(--safe-b));
+  }
+
+  .swipe-cue { width: 44px; height: 44px; font-size: 21px; }
+  .cue-up { top: calc(var(--safe-t) + 30px); }
+  .cue-down { bottom: calc(16px + var(--safe-b)); }
+
+  .toast { bottom: calc(12px + var(--safe-b)); font-size: 12px; padding: 8px 14px; }
+
+  .coach-box { max-width: 440px; padding: 16px 20px; }
+  .coach-box h2 { margin-bottom: 8px; font-size: 15px; }
+  .coach-box ul { margin-bottom: 12px; column-count: 2; column-gap: 24px; }
+  .coach-box li { padding: 5px 0; font-size: 13px; break-inside: avoid; }
+  .coach-box .primary { min-height: 42px; }
+}
+
+/* 横画面で背が低いほど、左右の余白を詰めて文字の場所を広げる */
+@media (orientation: landscape) and (max-height: 420px) {
+  .stage {
+    padding-left: calc(48px + var(--safe-l));
+    padding-right: calc(48px + var(--safe-r));
+    padding-bottom: calc(16px + var(--safe-b));
+  }
+  .study-bottom .controls { gap: 10px; }
+  .study-bottom .controls .icon { width: 36px; height: 36px; font-size: 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

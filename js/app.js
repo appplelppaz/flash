@@ -624,6 +624,52 @@
     });
   }
 
+  /**
+   * カードの空きいっぱいまで文字を大きくする。
+   *
+   * 画面の縦横は端末と持ち方で変わるうえ、語の長さも例文の長さもまちまちなので、
+   * CSS の決め打ちでは「短い語なのに小さい」「長い例文がはみ出す」が避けられない。
+   * ここでは入る大きさを実際に測って二分探索で決める。
+   */
+  var FIT_MIN = 18;
+  var FIT_MAX = 150;
+
+  function fitCard() {
+    var stage = $('stage');
+    var card = $('card');
+    var inner = card.firstElementChild;
+    if (!inner) return;
+
+    // 入る大きさはステージの内側で決まる。カード自身の高さは中身につられて
+    // 伸びてしまうので、基準にしてはいけない
+    var cs = getComputedStyle(stage);
+    var availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    var availW = Math.min(
+      stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+      card.clientWidth
+    );
+    if (availH < 40 || availW < 40) return;
+
+    var hi = Math.max(FIT_MIN + 1, Math.min(FIT_MAX, availH * 0.62));
+    var lo = FIT_MIN;
+    var best = FIT_MIN;
+
+    var fits = function (size) {
+      card.style.setProperty('--lead', size.toFixed(1) + 'px');
+      return inner.scrollHeight <= availH && inner.scrollWidth <= availW + 1;
+    };
+
+    if (fits(hi)) {
+      best = hi;
+    } else {
+      for (var i = 0; i < 8; i++) {
+        var mid = (lo + hi) / 2;
+        if (fits(mid)) { best = mid; lo = mid; } else { hi = mid; }
+      }
+    }
+    card.style.setProperty('--lead', best.toFixed(1) + 'px');
+  }
+
   /** 「この例文でついでに覚える語」の行 */
   function paintLinkNotes(hits) {
     var node = $('line-links');
@@ -695,6 +741,8 @@
 
     $('btn-fav').classList.toggle('active', !!cur.progress.fav);
     $('card').classList.toggle('paused', st.paused);
+
+    fitCard();
 
     // 操作の説明を出している間は、読み上げも自動めくりも始めない
     if (!st.paused && $('coach').hidden) playStage();
@@ -951,6 +999,19 @@
 
     document.addEventListener('visibilitychange', function () {
       if (document.hidden && st.session) togglePause(true);
+    });
+
+    // 向きを変えたり、アドレスバーの出入りで高さが変わったら測り直す
+    var refit = null;
+    var scheduleFit = function () {
+      if (!st.session) return;
+      if (refit) clearTimeout(refit);
+      refit = setTimeout(function () { refit = null; fitCard(); }, 120);
+    };
+    global.addEventListener('resize', scheduleFit);
+    global.addEventListener('orientationchange', function () {
+      scheduleFit();
+      setTimeout(fitCard, 400);
     });
   }
 
