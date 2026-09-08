@@ -1,283 +1,216 @@
 /**
- * 学習セッションのロジック。
+ * 学習セッション（DOM に依存しないロジック）
  *
- * 選んだ単語がすべて「学習済み」になるまで出題を繰り返す。
- * 1 枚のカードは requiredStreak 回連続で正解すると学習済みになり、
- * 不正解なら連続正解数が 0 に戻ってキューの後ろに積み直される。
- * DOM には一切触れないので Node からもテストできる。
+ * 1 セット = 出題語数ぶんのキュー。
+ *   覚えた   → その語は学習済みになりキューから外れる（以後の出題にも出ない）
+ *   まだ     → 3 枚あとに積み直され、同じセットの中で必ずもう一度出る
+ *   判定なし → 記録せずキューの末尾へ回す
+ * キューが空になったら、残りの語で次のセットが自動的に始まる。
  */
 (function (global) {
   'use strict';
 
-  // 不正解の単語を何枚あとに再出題するか（キューが短いときは末尾）
-  var REQUEUE_AFTER_WRONG = 3;
-  // 正解したがまだ学習済みでない単語を何枚あとに再出題するか
-  var REQUEUE_AFTER_CORRECT = 6;
+  var REQUEUE_GAP = 3;
+  var HISTORY_MAX = 50;
 
-  function shuffle(items, random) {
-    var rand = random || Math.random;
-    var result = items.slice();
-    for (var i = result.length - 1; i > 0; i--) {
-      var j = Math.floor(rand() * (i + 1));
-      var tmp = result[i];
-      result[i] = result[j];
-      result[j] = tmp;
+  function emptyProgress() {
+    return { learned: false, right: 0, wrong: 0, fav: false };
+  }
+
+  function progressOf(progress, id) {
+    return progress[id] || emptyProgress();
+  }
+
+  function shuffle(arr, rand) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor((rand || Math.random)() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
     }
-    return result;
+    return a;
   }
 
   /**
-   * 出題する単語を選ぶ。
-   * order:
-   *   'unlearned-first' … 未学習・苦手なものを優先（デフォルト）
-   *   'random'          … 完全にランダム
-   *   'weak-first'      … これまでの不正解が多い順
-   * progress は { [wordId]: { correct, wrong, learned } } 形式。
+   * 出題対象の抽出。
+   * @param {Array} cards
+   * @param {Object} progress
+   * @param {string} scope new | weak | fav | all
    */
-  function pickWords(words, count, options) {
-    var opts = options || {};
-    var order = opts.order || 'unlearned-first';
+  function selectPool(cards, progress, scope) {
+    var pool = [];
+    for (var i = 0; i < cards.length; i++) {
+      var p = progressOf(progress, i);
+      if (scope === 'weak') {
+        if (p.wrong > 0 && !p.learned) pool.push(i);
+      } else if (scope === 'fav') {
+        if (p.fav) pool.push(i);
+      } else if (scope === 'all') {
+        pool.push(i);
+      } else {
+        if (!p.learned) pool.push(i);
+      }
+    }
+    return pool;
+  }
+
+  function orderPool(pool, progress, order, rand) {
+    if (order === 'random') return shuffle(pool, rand);
+    if (order === 'weak-first') {
+      return pool.slice().sort(function (a, b) {
+        var pa = progressOf(progress, a), pb = progressOf(progress, b);
+        var wa = pa.wrong - pa.right, wb = pb.wrong - pb.right;
+        if (wa !== wb) return wb - wa;
+        return a - b;
+      });
+    }
+    return pool.slice();
+  }
+
+  /**
+   * @param {Object} opts
+   * @param {Array}  opts.cards     カードの配列
+   * @param {Object} opts.progress  index -> {learned,right,wrong,fav}（この場で書き換える）
+   * @param {number} opts.setSize   1 セットの語数
+   * @param {string} opts.scope     new | weak | fav | all
+   * @param {string} opts.order     listed | random | weak-first
+   * @param {Function} [opts.random]
+   */
+  function create(opts) {
+    var cards = opts.cards || [];
     var progress = opts.progress || {};
-    var random = opts.random || Math.random;
-    var limit = Math.max(1, Math.min(count, words.length));
-    var pool = shuffle(words, random);
+    var setSize = Math.max(1, opts.setSize || 20);
+    var scope = opts.scope || 'new';
+    var order = opts.order || 'listed';
+    var rand = opts.random;
 
-    function statOf(word) {
-      return progress[word.id] || { correct: 0, wrong: 0, learned: false };
-    }
+    var remaining = orderPool(selectPool(cards, progress, scope), progress, order, rand);
+    var queue = [];
+    var setTotal = 0;
+    var history = [];
+    var setNo = 0;
+    var stats = { answered: 0, correct: 0, learned: 0, sets: 0, startedAt: Date.now() };
 
-    if (order === 'unlearned-first') {
-      pool.sort(function (a, b) {
-        var sa = statOf(a);
-        var sb = statOf(b);
-        // 未学習を先に、その中では不正解が多いものを先に
-        return (sa.learned === sb.learned)
-          ? (sb.wrong - sa.wrong)
-          : (sa.learned ? 1 : -1);
-      });
-    } else if (order === 'weak-first') {
-      pool.sort(function (a, b) {
-        return statOf(b).wrong - statOf(a).wrong;
-      });
-    }
-
-    return pool.slice(0, limit);
-  }
-
-  /**
-   * @param {Object} options
-   * @param {Array}  options.words          出題する単語（pickWords の戻り値）
-   * @param {number} options.requiredStreak 学習済みと判定する連続正解回数
-   * @param {string} options.direction      'term-first' | 'meaning-first' | 'mixed'
-   */
-  function StudySession(options) {
-    var opts = options || {};
-    var random = opts.random || Math.random;
-
-    this.requiredStreak = Math.max(1, opts.requiredStreak || 2);
-    this.direction = opts.direction || 'term-first';
-    this._random = random;
-    this.answeredCount = 0;
-    this.correctCount = 0;
-    this.startedAt = opts.startedAt || Date.now();
-    this.finishedAt = null;
-
-    this.cards = (opts.words || []).map(function (word) {
-      return {
-        word: word,
-        streak: 0,
-        correct: 0,
-        wrong: 0,
-        learned: false,
-        // mixed のときはカードごとに出題方向を固定しておく
-        askMeaningFirst: opts.direction === 'meaning-first' ||
-          (opts.direction === 'mixed' && random() < 0.5)
-      };
-    });
-
-    this.queue = this.cards.slice();
-    // 「前の単語に戻る」ためにさかのぼれるよう、出し終えたカードを控えておく
-    this.history = [];
-  }
-
-  // 履歴が無限に伸びないよう、さかのぼれる枚数には上限をつける
-  var HISTORY_LIMIT = 50;
-
-  StudySession.prototype._remember = function (card) {
-    this.history.push(card);
-    if (this.history.length > HISTORY_LIMIT) this.history.shift();
-  };
-
-  StudySession.prototype.total = function () {
-    return this.cards.length;
-  };
-
-  StudySession.prototype.learnedCount = function () {
-    return this.cards.filter(function (card) {
-      return card.learned;
-    }).length;
-  };
-
-  StudySession.prototype.remainingCount = function () {
-    return this.total() - this.learnedCount();
-  };
-
-  StudySession.prototype.isComplete = function () {
-    return this.queue.length === 0;
-  };
-
-  StudySession.prototype.current = function () {
-    return this.queue.length ? this.queue[0] : null;
-  };
-
-  /**
-   * 現在のカードを提示する順番で返す。
-   *
-   * 画面表示: 単語 → 日本語訳 → その単語を含む例文
-   *   （例文の日本語訳は表示せず、読み上げのみ）
-   * 読み上げ: 単語 → 日本語訳 → 例文 → 例文の日本語訳 → 例文（もう一度）
-   *
-   * 出題の向きが「意味 → 単語」のときは最初の 2 つが入れ替わる。
-   * 例文を持たない単語では、例文の段階は省かれる。
-   */
-  StudySession.prototype.currentSteps = function () {
-    var card = this.current();
-    if (!card) return null;
-    var word = card.word;
-
-    var termStep = {
-      key: 'term',
-      label: '単語',
-      text: word.term,
-      reading: word.reading || '',
-      speech: [{ text: word.term, ja: false }]
-    };
-    var meaningStep = {
-      key: 'meaning',
-      label: '日本語訳',
-      text: word.meaning,
-      speech: [{ text: word.meaning, ja: true }]
-    };
-
-    var steps = card.askMeaningFirst ? [meaningStep, termStep] : [termStep, meaningStep];
-
-    if (word.example) {
-      var speech = [{ text: word.example, ja: false }];
-      if (word.exampleJa) {
-        // 例文 → 例文の日本語訳 → もう一度 例文
-        speech.push({ text: word.exampleJa, ja: true });
-        speech.push({ text: word.example, ja: false });
+    function fillSet() {
+      queue = remaining.splice(0, setSize);
+      setTotal = queue.length;
+      if (queue.length) {
+        setNo++;
+        stats.sets = setNo;
       }
-      steps.push({ key: 'example', label: '例文', text: word.example, speech: speech });
+      return queue.length > 0;
     }
 
-    return steps;
-  };
-
-  /**
-   * 現在のカードに答える。
-   * @param {boolean} isCorrect
-   * @returns {{card: Object, learned: boolean, complete: boolean}|null}
-   */
-  StudySession.prototype.answer = function (isCorrect) {
-    var card = this.queue.shift();
-    if (!card) return null;
-
-    this._remember(card);
-    this.answeredCount++;
-
-    if (isCorrect) {
-      this.correctCount++;
-      card.correct++;
-      card.streak++;
-      if (card.streak >= this.requiredStreak) {
-        card.learned = true;
-      }
-    } else {
-      card.wrong++;
-      card.streak = 0;
-      card.learned = false;
+    function currentId() {
+      return queue.length ? queue[0] : null;
     }
 
-    if (!card.learned) {
-      var offset = isCorrect ? REQUEUE_AFTER_CORRECT : REQUEUE_AFTER_WRONG;
-      this.queue.splice(Math.min(offset, this.queue.length), 0, card);
+    function pushHistory(id) {
+      history.push(id);
+      if (history.length > HISTORY_MAX) history.shift();
     }
 
-    var complete = this.isComplete();
-    if (complete && !this.finishedAt) {
-      this.finishedAt = Date.now();
+    function requeue(id, gap) {
+      var at = Math.min(gap, queue.length);
+      queue.splice(at, 0, id);
     }
 
-    return { card: card, learned: card.learned, complete: complete };
-  };
+    function advance(id, gap, record) {
+      queue.shift();
+      pushHistory(id);
+      if (record !== 'remove') requeue(id, gap);
+      if (!queue.length) fillSet();
+    }
 
-  /**
-   * 判定せずにカードを後ろへまわす（自動めくりで最後まで見たとき用）。
-   * 正解数・解答数には影響せず、学習済みにもならない。
-   */
-  StudySession.prototype.skip = function () {
-    var card = this.queue.shift();
-    if (!card) return null;
-    this._remember(card);
-    this.queue.splice(Math.min(REQUEUE_AFTER_CORRECT, this.queue.length), 0, card);
-    return { card: card, learned: false, complete: false };
-  };
+    var api = {
+      /** 出題があるか */
+      start: function () { return fillSet(); },
 
-  /** 「前の単語」に戻れるか */
-  StudySession.prototype.hasPrevious = function () {
-    return this.history.length > 0;
-  };
+      current: function () {
+        var id = currentId();
+        return id === null ? null : { id: id, card: cards[id], progress: progressOf(progress, id) };
+      },
 
-  /**
-   * 直前に表示していた単語をもう一度いちばん前に出す（左スワイプ用）。
-   * 正解数・学習済みの判定はそのままで、キューの並びだけを戻す。
-   */
-  StudySession.prototype.previous = function () {
-    var card = this.history.pop();
-    if (!card) return null;
+      /** 覚えた */
+      known: function () {
+        var id = currentId();
+        if (id === null) return;
+        var p = progress[id] || (progress[id] = emptyProgress());
+        p.right++;
+        p.learned = true;
+        stats.answered++;
+        stats.correct++;
+        stats.learned++;
+        advance(id, 0, 'remove');
+      },
 
-    // 再出題待ちでキューに積み直されていたら、そこからは取り除いて先頭へ
-    var at = this.queue.indexOf(card);
-    if (at >= 0) this.queue.splice(at, 1);
-    this.queue.unshift(card);
+      /** まだ覚えていない */
+      unknown: function () {
+        var id = currentId();
+        if (id === null) return;
+        var p = progress[id] || (progress[id] = emptyProgress());
+        p.wrong++;
+        p.learned = false;
+        stats.answered++;
+        advance(id, REQUEUE_GAP, 'keep');
+      },
 
-    // 戻ったのだからセッションはまだ終わっていない
-    this.finishedAt = null;
-    return card;
-  };
+      /** 判定せず次へ（記録しない） */
+      skip: function () {
+        var id = currentId();
+        if (id === null) return;
+        advance(id, queue.length, 'keep');
+      },
 
-  StudySession.prototype.stats = function () {
-    return {
-      total: this.total(),
-      learned: this.learnedCount(),
-      remaining: this.remainingCount(),
-      answered: this.answeredCount,
-      correct: this.correctCount,
-      accuracy: this.answeredCount ? this.correctCount / this.answeredCount : 0,
-      elapsedMs: (this.finishedAt || Date.now()) - this.startedAt
+      /** 直前のカードに戻る（判定は取り消さない） */
+      back: function () {
+        var id = history.pop();
+        if (id === undefined) return false;
+        var at = queue.indexOf(id);
+        if (at !== -1) queue.splice(at, 1);
+        queue.unshift(id);
+        return true;
+      },
+
+      toggleFav: function () {
+        var id = currentId();
+        if (id === null) return false;
+        var p = progress[id] || (progress[id] = emptyProgress());
+        p.fav = !p.fav;
+        return p.fav;
+      },
+
+      /** セット内の残り枚数（同じ語の重複を除く） */
+      setLeft: function () {
+        var uniq = {};
+        for (var i = 0; i < queue.length; i++) uniq[queue[i]] = true;
+        return Object.keys(uniq).length;
+      },
+
+      setSize: function () { return setSize; },
+      /** いま学習中のセットに最初何語入っていたか */
+      setTotal: function () { return setTotal; },
+      setNo: function () { return setNo; },
+      remaining: function () { return remaining.length; },
+      finished: function () { return queue.length === 0; },
+      stats: function () {
+        var s = {};
+        for (var k in stats) s[k] = stats[k];
+        s.elapsed = Date.now() - stats.startedAt;
+        s.accuracy = stats.answered ? stats.correct / stats.answered : 0;
+        return s;
+      },
+      progress: function () { return progress; }
     };
-  };
 
-  /** 苦手（間違えたことがある / 未学習）の単語だけを抜き出す */
-  function weakWords(words, progress) {
-    var stats = progress || {};
-    return words.filter(function (word) {
-      var stat = stats[word.id];
-      return stat && stat.wrong > 0 && !stat.learned;
-    });
+    return api;
   }
 
-  var api = {
-    StudySession: StudySession,
-    pickWords: pickWords,
-    weakWords: weakWords,
-    shuffle: shuffle
-  };
+  var api = { create: create, selectPool: selectPool, emptyProgress: emptyProgress };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
   } else {
-    global.Study = api;
+    global.Flash = global.Flash || {};
+    global.Flash.session = api;
   }
 })(typeof window !== 'undefined' ? window : globalThis);
