@@ -1,1174 +1,1169 @@
 /**
- * 画面の描画とイベント処理。
+ * 画面の描画と操作。
+ * ロジックは tsv / session / library / speech / gesture に置き、ここは繋ぐだけ。
  */
-(function () {
+(function (global) {
   'use strict';
 
-  var Decks = window.Decks;
-  var Storage = window.AppStorage;
-  var Study = window.Study;
+  var F = global.Flash;
+  var store = F.store, library = F.library, speech = F.speech, gesture = F.gesture;
+  var Session = F.session, tsv = F.tsv, links = F.links;
 
-  var SCREENS = ['home', 'deck', 'study', 'result', 'list', 'edit', 'settings'];
-
-  var TITLES = {
-    home: 'FLASHCARDS',
-    deck: '学習の設定',
-    study: '学習中',
-    result: '結果',
-    list: '単語一覧',
-    edit: '単語の編集',
-    settings: '設定'
+  var $ = function (id) { return document.getElementById(id); };
+  var el = function (tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
   };
 
-  var SCOPE_LABELS = { all: 'すべて', weak: '苦手のみ', fav: '★ のみ' };
+  /* ---- 設定 -------------------------------------------------------- */
 
-  var el = {};
-  function $(id) {
-    if (!el[id]) el[id] = document.getElementById(id);
-    return el[id];
+  var DEFAULTS = {
+    theme: 'auto',
+    setSize: 20,
+    order: 'listed',
+    direction: 'example-first',
+    showExampleJa: false,
+    highlightLinks: true,
+    tts: true,
+    ttsPlan: 'full',
+    rate: 1,
+    voices: {},
+    autoFlip: true,
+    flipDelay: 1,
+    autoNext: true,
+    nextDelay: 1.5,
+    coachSeen: false,
+    scope: 'new'
+  };
+
+  var settings = Object.assign({}, DEFAULTS);
+
+  function saveSettings() {
+    store.setSoon('settings', settings, 200);
   }
 
-  var state = {
-    screen: 'home',
-    history: [],
-    settings: Storage.loadSettings(),
-    decks: [],
-    deck: null,
-    list: null,
-    session: null,
-    steps: [],
-    stepIndex: 0,
-    autoTimer: null,
-    autoPaused: false,
-    scope: 'all',
-    filter: 'all',
-    query: '',
-    editing: null, // { listId, term } 編集中の自作単語
-    listLimit: 0   // 単語一覧で表示している件数
-  };
-
-  // ---------- 共通ユーティリティ ----------
-
-  var LIST_PAGE = 200; // 単語一覧は 200 語ずつ描画する（3000 語のリストでも重くならないように）
-
-  function refreshDecks() {
-    state.decks = Decks.withCustom(Storage.loadCustomWords());
-    if (state.deck) {
-      state.deck = state.decks.filter(function (d) { return d.id === state.deck.id; })[0] || null;
+  /** 前の版で保存された設定を今の形に直す */
+  function migrateSettings(saved) {
+    var s = Object.assign({}, saved);
+    if (s.auto !== undefined && s.autoFlip === undefined) {
+      s.autoFlip = s.auto;
+      s.autoNext = s.auto;
     }
-    if (state.deck) state.list = selectedList(state.deck, state.list && state.list.id);
-    else state.list = null;
+    if (s.delay !== undefined && s.flipDelay === undefined) {
+      s.flipDelay = s.delay;
+      s.nextDelay = Math.max(s.delay, 1.5);
+    }
+    delete s.auto;
+    delete s.delay;
+    return s;
   }
 
-  /** その言語で選ばれている単語リスト（未選択なら既定のリスト） */
-  function selectedList(deck, preferredId) {
-    if (!deck || !deck.lists.length) return null;
-    var ids = deck.lists.map(function (list) { return list.id; });
-    var wanted = preferredId && ids.indexOf(preferredId) >= 0
-      ? preferredId
-      : Storage.selectedListId(deck.id, deck.defaultListId, ids);
-    return deck.lists.filter(function (list) { return list.id === wanted; })[0] || deck.lists[0];
+  /* ---- 画面遷移 ---------------------------------------------------- */
+
+  var stack = ['home'];
+
+  function render(name) {
+    var views = document.querySelectorAll('.view');
+    for (var i = 0; i < views.length; i++) {
+      views[i].classList.toggle('on', views[i].dataset.view === name);
+    }
+    if (name !== 'study') stopStudy();
+    var scroller = document.querySelector('.view.on .scroll');
+    if (scroller) scroller.scrollTop = 0;
   }
 
-  function listStats(list, progress) {
-    var stats = progress || Storage.loadProgress();
-    var learned = 0;
-    var weak = 0;
-    if (!list) return { total: 0, learned: 0, weak: 0 };
-    list.words.forEach(function (word) {
-      var stat = stats[word.id];
-      if (!stat) return;
-      if (stat.learned) learned++;
-      else if (stat.wrong > 0) weak++;
-    });
-    return { total: list.words.length, learned: learned, weak: weak };
+  /**
+   * 画面を出す。replace を付けると、いまの画面を置き換える（戻る先には残らない）。
+   */
+  function show(name, opts) {
+    render(name);
+    if (opts && opts.replace) {
+      stack.pop();
+      if (stack[stack.length - 1] !== name) stack.push(name);
+    } else if (stack[stack.length - 1] !== name) {
+      stack.push(name);
+    }
+  }
+
+  function back() {
+    if (stack.length > 1) stack.pop();
+    render(stack[stack.length - 1] || 'home');
+  }
+
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 2200);
   }
 
   function applyTheme() {
-    var theme = state.settings.theme;
-    if (theme === 'auto') document.documentElement.removeAttribute('data-theme');
-    else document.documentElement.setAttribute('data-theme', theme);
+    var html = document.documentElement;
+    if (settings.theme === 'auto') html.removeAttribute('data-theme');
+    else html.setAttribute('data-theme', settings.theme);
   }
 
-  function escapeHtml(text) {
-    return String(text).replace(/[&<>"']/g, function (character) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
-    });
+  /* ---- 通算の記録 -------------------------------------------------- */
+
+  var stats = { days: {}, streak: 0, last: '' };
+
+  function todayKey() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   }
 
-  function formatDuration(ms) {
-    var seconds = Math.max(0, Math.round(ms / 1000));
-    var minutes = Math.floor(seconds / 60);
-    return minutes ? minutes + ' 分 ' + (seconds % 60) + ' 秒' : seconds + ' 秒';
+  function markStudiedToday() {
+    var key = todayKey();
+    if (stats.days[key]) return;
+    stats.days[key] = true;
+    var y = new Date(Date.now() - 86400000);
+    var yKey = y.getFullYear() + '-' + ('0' + (y.getMonth() + 1)).slice(-2) + '-' + ('0' + y.getDate()).slice(-2);
+    stats.streak = stats.days[yKey] ? (stats.streak || 0) + 1 : 1;
+    stats.last = key;
+    store.setSoon('stats', stats);
   }
 
-  /** 判定したことを、文字ではなく色のまたたきで返す */
-  function flashCard(kind) {
-    var card = $('card');
-    card.classList.remove('is-correct', 'is-wrong');
-    void card.offsetWidth; // アニメーションをやり直させる
-    card.classList.add(kind);
-    setTimeout(function () { card.classList.remove(kind); }, 320);
+  /* ---- ホーム ------------------------------------------------------ */
+
+  function countLearned(prog) {
+    var n = 0;
+    for (var k in prog) if (prog[k].learned) n++;
+    return n;
   }
-
-  // ---------- 読み上げ ----------
-
-  var speechToken = 0;      // 古い読み上げ列を無効化するための世代番号
-  var speechFallback = null; // onend が来ない環境のための保険
-
-  function stopSpeaking() {
-    speechToken++;
-    if (speechFallback) {
-      clearTimeout(speechFallback);
-      speechFallback = null;
-    }
-    if (window.speechSynthesis) {
-      try { window.speechSynthesis.cancel(); } catch (err) { /* noop */ }
-    }
-  }
-
-  /**
-   * 複数の文を順番に読み上げ、すべて終わったら onDone を呼ぶ。
-   * @param {Array} items [{ text, ja }] ja が true なら日本語で読む
-   */
-  function speakSequence(items, onDone) {
-    stopSpeaking();
-    var done = onDone || function () {};
-    var queue = (items || []).filter(function (item) { return item && item.text; });
-
-    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance || !queue.length) {
-      done();
-      return;
-    }
-
-    var token = speechToken;
-    var index = 0;
-    var finished = false;
-
-    function finish() {
-      if (finished || token !== speechToken) return;
-      finished = true;
-      if (speechFallback) {
-        clearTimeout(speechFallback);
-        speechFallback = null;
-      }
-      done();
-    }
-
-    function next() {
-      if (token !== speechToken) return;
-      if (index >= queue.length) {
-        finish();
-        return;
-      }
-      var item = queue[index++];
-      try {
-        var utterance = new window.SpeechSynthesisUtterance(item.text);
-        utterance.lang = item.ja ? 'ja-JP' : ((state.deck && state.deck.lang) || 'en-US');
-        utterance.rate = 0.95;
-        utterance.onend = next;
-        utterance.onerror = next;
-        window.speechSynthesis.speak(utterance);
-      } catch (err) {
-        next();
-      }
-    }
-
-    // 読み上げが返ってこない環境でも先に進めるようにする
-    speechFallback = setTimeout(finish, 4000 + queue.length * 7000);
-    next();
-  }
-
-  // ---------- 画面遷移 ----------
-
-  function showScreen(name, options) {
-    var opts = options || {};
-    if (!opts.replace && state.screen !== name) state.history.push(state.screen);
-    state.screen = name;
-
-    if (name !== 'study') {
-      clearAutoTimer();
-      stopSpeaking();
-    }
-
-    // 学習画面だけはビューポート全体を使う（横画面で画面いっぱいに表示するため）
-    document.body.classList.toggle('is-study', name === 'study');
-
-    SCREENS.forEach(function (screen) {
-      document.getElementById('screen-' + screen).hidden = (screen !== name);
-    });
-    $('topbar-title').textContent = TITLES[name] || 'Flashcards';
-    $('back-btn').hidden = (name === 'home');
-    $('settings-btn').hidden = (name === 'settings' || name === 'study');
-    window.scrollTo(0, 0);
-  }
-
-  function goBack() {
-    if (state.screen === 'study' && state.session && !state.session.isComplete()) {
-      clearAutoTimer();
-      if (!window.confirm('学習を中断しますか？ 途中の結果は記録されません。')) {
-        scheduleAuto();
-        return;
-      }
-      state.session = null;
-    }
-    if (state.screen === 'settings') applySettingsForm();
-
-    var target = state.history.pop() || 'home';
-    if (target === 'study') target = 'deck';       // 学習画面には戻らない
-    if (target === 'edit') target = 'list';
-
-    renderScreen(target);
-    showScreen(target, { replace: true });
-  }
-
-  function renderScreen(name) {
-    if (name === 'home') renderHome();
-    if (name === 'deck') renderDeck();
-    if (name === 'list') renderList();
-    if (name === 'settings') fillSettingsForm();
-  }
-
-  // ---------- ホーム ----------
 
   function renderHome() {
-    refreshDecks();
-    var progress = Storage.loadProgress();
-    var stats = Storage.loadStats();
+    var lists = library.lists();
+    var box = $('decklist');
+    box.textContent = '';
 
-    var learnedTotal = 0;
-    state.decks.forEach(function (deck) {
-      deck.lists.forEach(function (list) {
-        learnedTotal += listStats(list, progress).learned;
-      });
+    var totalLearned = 0;
+    lists.forEach(function (l) {
+      var prog = library.cachedProgress(l.id) || {};
+      var learned = countLearned(prog);
+      totalLearned += learned;
+      var pct = l.count ? Math.round(learned / l.count * 100) : 0;
+      var info = library.langInfo(l.lang);
+
+      var btn = el('button', 'deck-card');
+      btn.appendChild(el('span', 'badge', info.flag));
+
+      var body = el('div', 'body');
+      body.appendChild(el('div', 'name', l.name));
+      var sub = info.name + ' · ' + l.count.toLocaleString('ja-JP') + ' 語';
+      if (!l.builtin) sub += ' · 取り込み';
+      body.appendChild(el('div', 'sub', sub));
+      var bar = el('div', 'bar');
+      var fill = el('i');
+      fill.style.width = pct + '%';
+      bar.appendChild(fill);
+      body.appendChild(bar);
+      btn.appendChild(body);
+      btn.appendChild(el('span', 'pct', pct + '%'));
+
+      btn.addEventListener('click', function () { openDeck(l.id); });
+      box.appendChild(btn);
     });
 
-    $('stat-learned').textContent = learnedTotal;
-    $('stat-streak').textContent = stats.streakDays;
-    $('stat-accuracy').textContent = stats.answered
-      ? Math.round((stats.correct / stats.answered) * 100) + '%'
-      : '—';
-
-    var list = $('deck-list');
-    list.innerHTML = '';
-
-    state.decks.forEach(function (deck) {
-      var current = selectedList(deck);
-      var stat = listStats(current, progress);
-      var percent = stat.total ? Math.round((stat.learned / stat.total) * 100) : 0;
-
-      var li = document.createElement('li');
-      var button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'deck-btn';
-      button.innerHTML =
-        '<span class="code-chip">' + deck.code + '</span>' +
-        '<span class="deck-main">' +
-          '<span class="deck-name">' + deck.name + '</span>' +
-          '<span class="deck-list-name">' + escapeHtml(current ? current.name : 'リストがありません') + '</span>' +
-          '<span class="deck-meta">' + stat.total + ' 語 · 学習済み ' + stat.learned + ' · ' + percent + '%</span>' +
-          '<span class="deck-line"><span style="width:' + percent + '%"></span></span>' +
-        '</span>' +
-        '<span class="chev">›</span>';
-      button.addEventListener('click', function () { openDeck(deck.id); });
-      li.appendChild(button);
-      list.appendChild(li);
-    });
-  }
-
-  // ---------- デッキ（学習の設定） ----------
-
-  function openDeck(deckId) {
-    refreshDecks();
-    state.deck = state.decks.filter(function (d) { return d.id === deckId; })[0] || null;
-    if (!state.deck) return;
-    state.list = selectedList(state.deck);
-    state.scope = 'all';
-    $('deck-word-count').value = Math.min(state.settings.wordCount, state.list ? state.list.words.length : 1);
-    renderDeck();
-    showScreen('deck');
-  }
-
-  /** 単語リストを切り替えて、その言語の選択として保存する */
-  function selectList(listId) {
-    if (!state.deck) return;
-    Storage.saveSelectedList(state.deck.id, listId);
-    state.list = selectedList(state.deck, listId);
-    state.scope = 'all';
-    $('deck-word-count').value = Math.min(state.settings.wordCount, state.list ? state.list.words.length : 1);
-    renderDeck();
-  }
-
-  /**
-   * 出題の対象になる単語。
-   * 〇 をつけた（＝学習済みの）単語は、もう出さないので必ず外す。
-   */
-  function scopeWords() {
-    var list = state.list;
-    if (!list) return [];
-    var progress = Storage.loadProgress();
-
-    var pool;
-    if (state.scope === 'weak') {
-      pool = Study.weakWords(list.words, progress);
-    } else if (state.scope === 'fav') {
-      var favorites = Storage.loadFavorites();
-      pool = list.words.filter(function (word) { return favorites[word.id]; });
-    } else {
-      pool = list.words;
+    if (!lists.length) {
+      var empty = el('div', 'empty');
+      empty.innerHTML = 'リストがありません。<br>右下の ＋ から TSV を取り込んでください。';
+      box.appendChild(empty);
     }
 
-    return pool.filter(function (word) {
-      var stat = progress[word.id];
-      return !(stat && stat.learned);
+    var totals = $('home-totals');
+    totals.textContent = '';
+    [[lists.length, 'リスト'], [totalLearned.toLocaleString('ja-JP'), '学習済み'], [(stats.streak || 0) + ' 日', '連続']]
+      .forEach(function (pair) {
+        var d = el('div');
+        d.appendChild(el('b', null, String(pair[0])));
+        d.appendChild(el('span', null, pair[1]));
+        totals.appendChild(d);
+      });
+  }
+
+  /* ---- リスト画面 -------------------------------------------------- */
+
+  var deck = null;   // { meta, cards, progress }
+
+  function openDeck(id) {
+    var meta = library.find(id);
+    if (!meta) return;
+    $('deck-title').textContent = meta.name;
+    $('deck-nums').innerHTML = '読み込み中…';
+    show('deck');
+    Promise.all([library.cards(id), library.progress(id)]).then(function (r) {
+      deck = { meta: meta, cards: r[0], progress: r[1] };
+      renderDeck();
+    }).catch(function (e) {
+      $('deck-nums').textContent = '読み込めませんでした';
+      toast(e.message || '読み込めませんでした');
     });
+  }
+
+  function scopeCount(scope) {
+    if (!deck) return 0;
+    return Session.selectPool(deck.cards, deck.progress, scope).length;
   }
 
   function renderDeck() {
-    var deck = state.deck;
     if (!deck) return;
+    var total = deck.cards.length;
+    var learned = countLearned(deck.progress);
+    var pct = total ? Math.round(learned / total * 100) : 0;
 
-    var stat = listStats(state.list);
-    var percent = stat.total ? (stat.learned / stat.total) * 100 : 0;
+    var ring = $('deck-ring');
+    ring.style.setProperty('--p', pct);
+    ring.textContent = '';
+    ring.appendChild(el('span', null, pct + '%'));
 
-    $('deck-code').textContent = deck.code;
-    $('deck-name').textContent = deck.name;
-    $('deck-sub').textContent = stat.learned + ' / ' + stat.total + ' 語 学習済み';
-    $('deck-meter-fill').style.width = percent + '%';
+    var weak = scopeCount('weak'), fav = scopeCount('fav'), fresh = scopeCount('new');
+    $('deck-nums').innerHTML =
+      '<div><b>' + total.toLocaleString('ja-JP') + '</b> 語 / 学習済み <b>' + learned.toLocaleString('ja-JP') + '</b></div>' +
+      '<div>未学習 <b>' + fresh + '</b> · 苦手 <b>' + weak + '</b> · ★ <b>' + fav + '</b></div>';
 
-    renderListSelect(deck);
-
-    Array.prototype.forEach.call($('scope-group').children, function (button) {
-      button.classList.toggle('is-active', button.dataset.scope === state.scope);
+    document.querySelectorAll('#scope-picker button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.scope === settings.scope);
+    });
+    $('size-value').textContent = settings.setSize;
+    document.querySelectorAll('#size-presets button').forEach(function (b) {
+      b.classList.toggle('on', Number(b.dataset.size) === settings.setSize);
     });
 
-    var available = scopeWords().length;
-    $('scope-hint').textContent = available + ' 語';
-
-    var max = Math.max(1, available);
-    var count = Math.min(deckCount(), max);
-    $('deck-word-count').value = count;
-    $('deck-word-count').max = max;
-
-    Array.prototype.forEach.call($('count-presets').children, function (chip) {
-      var value = chip.dataset.count === 'all' ? max : parseInt(chip.dataset.count, 10);
-      chip.classList.toggle('is-active', value === count);
-      chip.disabled = chip.dataset.count !== 'all' && value > max;
-    });
-
-    $('start-btn').disabled = available === 0;
-    $('start-btn').textContent = available === 0 ? '対象の単語がありません' : '学習を開始';
+    var n = Math.min(settings.setSize, scopeCount(settings.scope));
+    $('start-label').textContent = n > 0 ? n + ' 語で学習を始める' : '出題できる語がありません';
+    $('btn-start').disabled = n === 0;
+    $('btn-deck-delete').textContent = deck.meta.builtin ? 'リストは削除できません' : 'リストを削除';
+    $('btn-deck-delete').disabled = !!deck.meta.builtin;
   }
 
-  /** 単語リストの選択欄。既定のリストには「既定」を付ける */
-  function renderListSelect(deck) {
-    var select = $('list-select');
-    select.innerHTML = '';
-    deck.lists.forEach(function (list) {
-      var option = document.createElement('option');
-      option.value = list.id;
-      option.textContent = list.name + '（' + list.words.length + ' 語）' +
-        (list.id === deck.defaultListId ? ' · 既定' : '');
-      select.appendChild(option);
-    });
-    select.value = state.list ? state.list.id : '';
-    select.disabled = deck.lists.length < 2;
-  }
-
-  function deckCount() {
-    var value = parseInt($('deck-word-count').value, 10);
-    if (isNaN(value)) value = state.settings.wordCount;
-    return Math.max(1, value);
-  }
-
-  // ---------- 学習 ----------
-
-  function startSession() {
-    var pool = scopeWords();
-    if (!pool.length) return;
-
-    var count = Math.min(deckCount(), pool.length);
-    var words = Study.pickWords(pool, count, {
-      order: state.settings.order,
-      progress: Storage.loadProgress()
-    });
-
-    state.session = new Study.StudySession({
-      words: words,
-      // 〇 をつけたらその場で学習済み（もう出さない）
-      requiredStreak: 1,
-      direction: state.settings.direction
-    });
-    state.autoPaused = false;
-    $('card').classList.remove('is-paused');
-
-    showScreen('study');
-    renderAutoButton();
-    renderCard();
-  }
-
-  /** 進み具合は細いメーターだけで示す（文字では出さない） */
-  function renderStudyProgress() {
-    var stats = state.session.stats();
-    var percent = stats.total ? (stats.learned / stats.total) * 100 : 0;
-    $('study-meter-fill').style.width = percent + '%';
-  }
-
-  /** カードを最初の段階（単語）から表示する */
-  function renderCard() {
-    var session = state.session;
-    if (!session) return;
-
-    renderStudyProgress();
-
-    if (!session.current()) {
-      finishSession();
-      return;
-    }
-
-    state.steps = session.currentSteps();
-    state.stepIndex = 0;
-    renderSteps();
-  }
-
-  /** いま何段階目かを示す点。段階を切り替えても現在地が分かるようにする */
-  function renderStepDots() {
-    var dots = $('card-dots');
-    dots.innerHTML = '';
-    state.steps.forEach(function (step, index) {
-      var dot = document.createElement('span');
-      dot.className = 'dot' + (index === state.stepIndex ? ' is-on' : '');
-      dot.title = step.label;
-      dots.appendChild(dot);
-    });
-  }
-
-  /**
-   * いまの段階だけを描画する。
-   * 3 つを並べず 1 つずつ切り替えることで、そのとき見るべきものに集中でき、
-   * 1 つあたりの文字も大きく取れる。
-   */
-  function renderSteps() {
-    var container = $('card-steps');
-    var step = state.steps[state.stepIndex];
-    container.innerHTML = '';
-
-    if (step) {
-      var div = document.createElement('div');
-      div.className = 'card-step is-current';
-      div.dataset.key = step.key;
-      div.innerHTML =
-        '<p class="step-text">' + escapeHtml(step.text) + '</p>' +
-        (step.reading ? '<p class="step-reading">' + escapeHtml(step.reading) + '</p>' : '');
-      container.appendChild(div);
-    }
-
-    renderStepDots();
-    $('card').classList.toggle('is-paused', state.autoPaused);
-
-    var card = state.session.current();
-    var favorites = Storage.loadFavorites();
-    $('fav-btn').setAttribute('aria-pressed',
-      card && favorites[card.word.id] === true ? 'true' : 'false');
-
-    playStep();
-  }
-
-  /**
-   * いまの段階を再生する。読み上げてから自動送りの計測を始める。
-   * 一時停止中は読み上げも計測もせず、その場で止めたままにする。
-   */
-  function playStep() {
-    clearAutoTimer();
-
-    if (state.autoPaused) {
-      stopSpeaking();
-      return;
-    }
-
-    var step = state.steps && state.steps[state.stepIndex];
-    if (state.settings.speech && step && step.speech) {
-      speakSequence(step.speech, scheduleAuto);
-    } else {
-      stopSpeaking();
-      scheduleAuto();
-    }
-  }
-
-  /**
-   * タップでその場を一時停止し、もう一度タップで再開する。
-   * 止めている間は読み上げも自動送りも動かず、表示はそのまま残る。
-   */
-  function togglePause() {
-    state.autoPaused = !state.autoPaused;
-    $('card').classList.toggle('is-paused', state.autoPaused);
-    renderAutoButton();
-    playStep();
-  }
-
-  // ---------- 自動めくり ----------
-
-  function clearAutoTimer() {
-    if (state.autoTimer) {
-      clearTimeout(state.autoTimer);
-      state.autoTimer = null;
-    }
-    var fill = $('card-timer-fill');
-    fill.style.transition = 'none';
-    fill.style.width = '0%';
-    $('card-timer').hidden = true;
-  }
-
-  function scheduleAuto() {
-    clearAutoTimer();
-    if (!state.settings.autoAdvance || state.autoPaused || state.screen !== 'study') return;
-
-    var seconds = state.settings.autoSeconds;
-    var timer = $('card-timer');
-    var fill = $('card-timer-fill');
-    timer.hidden = false;
-    fill.style.transition = 'none';
-    fill.style.width = '0%';
-
-    window.requestAnimationFrame(function () {
-      window.requestAnimationFrame(function () {
-        fill.style.transition = 'width ' + seconds + 's linear';
-        fill.style.width = '100%';
+  function bindDeck() {
+    document.querySelectorAll('#scope-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.scope = b.dataset.scope;
+        saveSettings();
+        renderDeck();
       });
     });
-
-    state.autoTimer = setTimeout(function () {
-      state.autoTimer = null;
-      advance({ auto: true });
-    }, seconds * 1000);
+    $('size-minus').addEventListener('click', function () { bumpSize(-5); });
+    $('size-plus').addEventListener('click', function () { bumpSize(5); });
+    document.querySelectorAll('#size-presets button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.setSize = Number(b.dataset.size);
+        saveSettings();
+        renderDeck();
+      });
+    });
+    $('btn-deck-cards').addEventListener('click', function () { openCards(); });
+    $('btn-start').addEventListener('click', startStudy);
+    $('btn-deck-reset').addEventListener('click', function () {
+      if (!deck || !confirm('「' + deck.meta.name + '」の進み具合を消します。よろしいですか？')) return;
+      library.resetProgress(deck.meta.id).then(function () {
+        deck.progress = library.cachedProgress(deck.meta.id);
+        renderDeck();
+        toast('進み具合をリセットしました');
+      });
+    });
+    $('btn-deck-delete').addEventListener('click', function () {
+      if (!deck || deck.meta.builtin) return;
+      if (!confirm('「' + deck.meta.name + '」を削除します。よろしいですか？')) return;
+      library.deleteList(deck.meta.id).then(function () {
+        deck = null;
+        renderHome();
+        stack = ['home'];
+        render('home');
+        toast('削除しました');
+      });
+    });
   }
 
-  var PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5v14M14.5 5v14"/></svg>';
-  var PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>';
-
-  function renderAutoButton() {
-    var on = state.settings.autoAdvance && !state.autoPaused;
-    $('auto-btn').setAttribute('aria-pressed', on ? 'true' : 'false');
-    $('auto-btn').innerHTML = on ? PAUSE_ICON : PLAY_ICON;
+  function bumpSize(d) {
+    settings.setSize = Math.max(5, Math.min(200, settings.setSize + d));
+    saveSettings();
+    renderDeck();
   }
 
-  function toggleAuto() {
-    if (!state.settings.autoAdvance) {
-      // 設定でオフの場合はこの場でオンにする
-      state.settings = Storage.saveSettings(
-        Object.assign({}, state.settings, { autoAdvance: true }));
-      state.autoPaused = true; // 直後の togglePause で解除される
+  /* ---- 単語一覧 ---------------------------------------------------- */
+
+  var cardsFilter = 'all';
+  var cardsQuery = '';
+  var cardsShown = 0;
+  var PAGE = 60;
+
+  function openCards() {
+    if (!deck) return;
+    $('cards-title').textContent = deck.meta.name;
+    cardsQuery = '';
+    $('cards-search').value = '';
+    cardsShown = 0;
+    renderCards(true);
+    show('cards');
+  }
+
+  function matchCard(c, i) {
+    var p = deck.progress[i] || {};
+    if (cardsFilter === 'learned' && !p.learned) return false;
+    if (cardsFilter === 'new' && p.learned) return false;
+    if (cardsFilter === 'weak' && !(p.wrong > 0 && !p.learned)) return false;
+    if (cardsFilter === 'fav' && !p.fav) return false;
+    if (cardsQuery) {
+      var q = cardsQuery.toLowerCase();
+      var hay = (c.term + ' ' + c.meaning + ' ' + (c.example || '')).toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
     }
-    togglePause();
-  }
-
-  /**
-   * 次の段階へ進む。最後の段階から先へ進むときは、
-   * 手動なら何もせず判定を待ち、自動なら記録せずに再出題へまわす。
-   */
-  function advance(options) {
-    var opts = options || {};
-    if (!state.session || !state.session.current()) return;
-
-    if (state.stepIndex < state.steps.length - 1) {
-      state.stepIndex++;
-      renderSteps();
-      return;
-    }
-
-    if (!opts.auto) return; // 手動では最後の段階で止まり、判定を待つ
-
-    // 一定時間なにも操作されなかったときは、判定せずに次の単語へ移る
-    nextWord();
-  }
-
-  /** 左スワイプ / ‹ : 直前に見ていた単語に戻る（判定はやり直せる） */
-  function prevWord() {
-    var session = state.session;
-    if (!session) return;
-    if (!session.hasPrevious()) return;
-    clearAutoTimer();
-    stopSpeaking();
-    session.previous();
-    renderCard();
-  }
-
-  /** 右スワイプ / › : 判定せずに次の単語へ（この単語はあとでもう一度出る） */
-  function nextWord() {
-    var session = state.session;
-    if (!session || !session.current()) return;
-    clearAutoTimer();
-    stopSpeaking();
-    session.skip();
-    renderCard();
-  }
-
-  function judge(isCorrect) {
-    var session = state.session;
-    if (!session || !session.current()) return;
-
-    clearAutoTimer();
-    stopSpeaking();
-
-    var result = session.answer(isCorrect);
-    if (!result) return;
-
-    flashCard(isCorrect ? 'is-correct' : 'is-wrong');
-
-    if (result.complete) finishSession();
-    else renderCard();
-  }
-
-  /**
-   * セットを終えたときの処理。
-   * 指定した語数すべてに 〇 がついたら、まだ残っている単語で次のセットを始める。
-   * もう残っていなければ結果を出す。
-   */
-  function finishSession() {
-    var session = state.session;
-    if (!session) return;
-
-    clearAutoTimer();
-    stopSpeaking();
-
-    var stats = session.stats();
-    var saved = Storage.recordSession(session.cards, stats);
-
-    // 学習済みは scopeWords() から外れるので、残りがあれば次のセットへ
-    if (state.screen === 'study' && scopeWords().length) {
-      startSession();
-      return;
-    }
-
-    $('result-sub').textContent = (state.list ? state.list.name : state.deck.name) +
-      ' · ' + SCOPE_LABELS[state.scope];
-    $('result-total').textContent = stats.learned + ' / ' + stats.total + ' 語';
-    $('result-answered').textContent = stats.answered + ' 回';
-    $('result-accuracy').textContent = Math.round(stats.accuracy * 100) + '%';
-    $('result-time').textContent = formatDuration(stats.elapsedMs);
-    $('result-streak').textContent = saved.stats.streakDays + ' 日';
-
-    state.session = null;
-    showScreen('result');
-  }
-
-  // ---------- ジェスチャー ----------
-
-  // ここまで動かしたらスワイプとみなす距離（px）と、スワイプと認める時間（ms）
-  var SWIPE_MIN = 44;
-  var SWIPE_MAX_MS = 900;
-  // 指の動きをカードに反映させるときの控えめな追従率と、その上限（px）
-  var DRAG_RATIO = 0.32;
-  var DRAG_MAX = 60;
-
-  var swipe = { id: null, x: 0, y: 0, at: 0, dir: null, handled: false };
-
-  /** 直前のスワイプで click が起きた場合は、その click を無視する */
-  function swipeConsumedClick() {
-    if (!swipe.handled) return false;
-    swipe.handled = false;
     return true;
   }
 
-  function swipeDirection(dx, dy) {
-    var adx = Math.abs(dx);
-    var ady = Math.abs(dy);
-    if (Math.max(adx, ady) < SWIPE_MIN) return null;
-    if (ady >= adx) return dy < 0 ? 'up' : 'down';
-    return dx < 0 ? 'left' : 'right';
-  }
+  function renderCards(reset) {
+    if (!deck) return;
+    var box = $('wordlist');
+    if (reset) { box.textContent = ''; cardsShown = 0; }
 
-  function armMark(dir) {
-    $('correct-btn').classList.toggle('is-armed', dir === 'up');
-    $('wrong-btn').classList.toggle('is-armed', dir === 'down');
-  }
-
-  function dragCard(dx, dy) {
-    var card = $('card');
-    function clamp(value) {
-      return Math.max(-DRAG_MAX, Math.min(DRAG_MAX, value * DRAG_RATIO));
+    var matched = [];
+    for (var i = 0; i < deck.cards.length; i++) {
+      if (matchCard(deck.cards[i], i)) matched.push(i);
     }
-    if (dx === 0 && dy === 0) {
-      card.classList.remove('is-dragging');
-      card.style.transform = '';
-      return;
-    }
-    card.classList.add('is-dragging');
-    card.style.transform = 'translate(' + clamp(dx) + 'px, ' + clamp(dy) + 'px)';
-  }
-
-  function endSwipe() {
-    swipe.id = null;
-    swipe.dir = null;
-    armMark(null);
-    dragCard(0, 0);
-  }
-
-  /**
-   * 上スワイプ = 〇、下スワイプ = ✕、左スワイプ = 前の単語、右スワイプ = 次の単語。
-   * 画面上のアイコンの位置と向きをそろえてある。
-   */
-  function runSwipe(dir) {
-    if (dir === 'up') judge(true);
-    else if (dir === 'down') judge(false);
-    else if (dir === 'left') prevWord();
-    else if (dir === 'right') nextWord();
-  }
-
-  /**
-   * pointerdown だけを面で受け、その後の move / up は window で追う。
-   * setPointerCapture を使うと click の宛先が面に移ってしまい、
-   * カードや 〇 / ✕ のタップが効かなくなるため、こちらの形にしている。
-   */
-  function bindGestures(surface) {
-    surface.addEventListener('pointerdown', function (event) {
-      if (swipe.id !== null) return;
-      swipe.id = event.pointerId;
-      swipe.x = event.clientX;
-      swipe.y = event.clientY;
-      swipe.at = Date.now();
-      swipe.dir = null;
-      swipe.handled = false;
-    });
-
-    window.addEventListener('pointermove', function (event) {
-      if (swipe.id !== event.pointerId) return;
-      var dx = event.clientX - swipe.x;
-      var dy = event.clientY - swipe.y;
-      swipe.dir = swipeDirection(dx, dy);
-      armMark(swipe.dir);
-      dragCard(dx, dy);
-    });
-
-    window.addEventListener('pointerup', function (event) {
-      if (swipe.id !== event.pointerId) return;
-      var dir = swipeDirection(event.clientX - swipe.x, event.clientY - swipe.y);
-      var inTime = Date.now() - swipe.at <= SWIPE_MAX_MS;
-      endSwipe();
-      if (!dir || !inTime) return;
-      // 続けて起きる click（カードや 〇 / ✕ のタップ）は打ち消す。
-      // click が来ない場合もあるので、少し経ったら自分で下ろす。
-      swipe.handled = true;
-      setTimeout(function () { swipe.handled = false; }, 400);
-      runSwipe(dir);
-    });
-
-    window.addEventListener('pointercancel', function (event) {
-      if (swipe.id === event.pointerId) endSwipe();
-    });
-  }
-
-  // ---------- 単語一覧 ----------
-
-  function openList() {
-    state.query = '';
-    state.filter = 'all';
-    state.listLimit = LIST_PAGE;
-    $('search-input').value = '';
-    renderList();
-    showScreen('list');
-  }
-
-  function visibleWords() {
-    var list = state.list;
-    if (!list) return [];
-    var progress = Storage.loadProgress();
-    var favorites = Storage.loadFavorites();
-    var query = state.query.trim().toLowerCase();
-
-    return list.words.filter(function (word) {
-      var stat = progress[word.id] || { correct: 0, wrong: 0, learned: false };
-      if (state.filter === 'learned' && !stat.learned) return false;
-      if (state.filter === 'unlearned' && stat.learned) return false;
-      if (state.filter === 'weak' && !(stat.wrong > 0 && !stat.learned)) return false;
-      if (state.filter === 'fav' && !favorites[word.id]) return false;
-      if (!query) return true;
-      var haystack = [word.term, word.reading, word.meaning, word.example, word.exampleJa].join(' ');
-      return haystack.toLowerCase().indexOf(query) >= 0;
-    });
-  }
-
-  function renderList() {
-    if (!state.list) return;
-    var progress = Storage.loadProgress();
-    var favorites = Storage.loadFavorites();
-    var words = visibleWords();
-    var list = $('word-list');
-    list.innerHTML = '';
-
-    Array.prototype.forEach.call($('filter-chips').children, function (chip) {
-      chip.classList.toggle('is-active', chip.dataset.filter === state.filter);
-    });
-
-    if (!state.listLimit) state.listLimit = LIST_PAGE;
-    var shown = words.slice(0, state.listLimit);
-    $('list-count').textContent = state.list.name + ' · ' + words.length + ' 語' +
-      (shown.length < words.length ? '（' + shown.length + ' 語を表示中）' : '');
-    $('list-more-btn').hidden = shown.length >= words.length;
-    $('list-more-btn').textContent = 'さらに表示（残り ' + (words.length - shown.length) + ' 語）';
-
-    if (!words.length) {
-      var empty = document.createElement('li');
-      empty.className = 'empty';
-      empty.textContent = '該当する単語がありません。';
-      list.appendChild(empty);
-      return;
-    }
-
-    shown.forEach(function (word) {
-      var stat = progress[word.id] || { correct: 0, wrong: 0, learned: false };
-      var stateClass = stat.learned ? 'is-learned' : (stat.wrong > 0 ? 'is-weak' : '');
-      var isFav = favorites[word.id] === true;
-
-      var li = document.createElement('li');
-      li.className = 'word-row';
-      li.innerHTML =
-        '<span class="word-state ' + stateClass + '"></span>' +
-        '<span class="word-main">' +
-          '<span class="word-term">' + escapeHtml(word.term) +
-            (word.custom ? '<span class="badge">自作</span>' : '') +
-            (word.reading ? '<span class="badge">' + escapeHtml(word.reading) + '</span>' : '') +
-          '</span>' +
-          '<span class="word-meaning">' + escapeHtml(word.meaning) + '</span>' +
-          (word.example ? '<span class="word-example">' + escapeHtml(word.example) + '</span>' : '') +
-        '</span>';
-
-      var favBtn = document.createElement('button');
-      favBtn.type = 'button';
-      favBtn.className = 'row-btn' + (isFav ? ' is-on' : '');
-      favBtn.textContent = isFav ? '★' : '☆';
-      favBtn.setAttribute('aria-label', 'お気に入り');
-      favBtn.addEventListener('click', function () {
-        Storage.toggleFavorite(word.id);
-        renderList();
-      });
-
-      var speakBtn = document.createElement('button');
-      speakBtn.type = 'button';
-      speakBtn.className = 'row-btn';
-      speakBtn.textContent = '🔊';
-      speakBtn.setAttribute('aria-label', '読み上げ');
-      speakBtn.addEventListener('click', function () {
-        speakSequence([{ text: word.term, ja: false }]);
-      });
-
-      li.appendChild(favBtn);
-      li.appendChild(speakBtn);
-
-      if (word.custom) {
-        var editBtn = document.createElement('button');
-        editBtn.type = 'button';
-        editBtn.className = 'row-btn';
-        editBtn.textContent = '✎';
-        editBtn.setAttribute('aria-label', '編集');
-        editBtn.addEventListener('click', function () { openEditor(word); });
-        li.appendChild(editBtn);
+    var slice = matched.slice(cardsShown, cardsShown + PAGE);
+    slice.forEach(function (i) {
+      var c = deck.cards[i];
+      var p = deck.progress[i] || {};
+      var row = el('div', 'word-row' + (p.learned ? ' is-learned' : (p.wrong > 0 ? ' is-weak' : '')));
+      row.appendChild(el('span', 'mark'));
+      var w = el('div', 'w');
+      w.appendChild(el('div', 't', c.term + (c.reading ? '　' + c.reading : '')));
+      w.appendChild(el('div', 'm', c.meaning));
+      if (c.example) w.appendChild(el('div', 'e', c.example));
+      row.appendChild(w);
+      if (p.fav) {
+        var star = el('span', 'fav');
+        star.innerHTML = '<svg style="fill:currentColor"><use href="#i-star"/></svg>';
+        row.appendChild(star);
       }
+      box.appendChild(row);
+    });
+    cardsShown += slice.length;
 
-      list.appendChild(li);
+    if (!matched.length) {
+      var empty = el('div', 'empty', '見つかりませんでした');
+      box.appendChild(empty);
+    }
+    $('cards-more').hidden = cardsShown >= matched.length;
+    $('cards-title').textContent = deck.meta.name + '（' + matched.length.toLocaleString('ja-JP') + '）';
+  }
+
+  function bindCards() {
+    $('cards-search').addEventListener('input', function (e) {
+      cardsQuery = e.target.value.trim();
+      renderCards(true);
+    });
+    document.querySelectorAll('#cards-filter button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#cards-filter button').forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        cardsFilter = b.dataset.filter;
+        renderCards(true);
+      });
+    });
+    $('btn-cards-more').addEventListener('click', function () { renderCards(false); });
+    $('btn-export-tsv').addEventListener('click', function () {
+      if (!deck) return;
+      download(deck.meta.name + '.tsv', tsv.stringify(deck.cards), 'text/tab-separated-values');
     });
   }
 
-  // ---------- 単語の追加・編集 ----------
-
-  function openEditor(word) {
-    state.editing = word ? { listId: word.listId, term: word.term } : null;
-    $('edit-title').textContent = word ? '単語を編集' : '単語を追加';
-    $('edit-term').value = word ? word.term : '';
-    $('edit-reading').value = word ? (word.reading || '') : '';
-    $('edit-meaning').value = word ? word.meaning : '';
-    $('edit-example').value = word ? (word.example || '') : '';
-    $('edit-example-ja').value = word ? (word.exampleJa || '') : '';
-    $('edit-error').textContent = '';
-    $('edit-delete-btn').hidden = !word;
-    showScreen('edit');
-    $('edit-term').focus();
+  function download(filename, text, mime) {
+    var blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
-  function saveWord() {
-    if (!state.list) return;
-    var result = Storage.saveCustomWord(state.list.id, {
-      term: $('edit-term').value,
-      reading: $('edit-reading').value,
-      meaning: $('edit-meaning').value,
-      example: $('edit-example').value,
-      exampleJa: $('edit-example-ja').value
-    }, state.editing ? state.editing.term : null);
+  /* ---- 取り込み ---------------------------------------------------- */
 
-    if (!result.ok) {
-      $('edit-error').textContent = result.reason === 'duplicate'
-        ? 'その単語はすでに登録されています。'
-        : '単語と日本語訳は必須です。';
+  var parsed = null;
+
+  function openImport() {
+    parsed = null;
+    $('import-name').value = '';
+    $('import-text').value = '';
+    $('import-status').textContent = '';
+    $('import-preview').textContent = '';
+    $('btn-import-go').disabled = true;
+    show('import');
+  }
+
+  function fillLangSelect() {
+    var sel = $('import-lang');
+    sel.textContent = '';
+    Object.keys(library.LANGS).forEach(function (code) {
+      if (code === 'ja') return;
+      var o = el('option', null, library.LANGS[code].name);
+      o.value = code;
+      sel.appendChild(o);
+    });
+  }
+
+  function reviewImport(text, filename) {
+    var res = tsv.parse(text);
+    parsed = res;
+    var status = $('import-status');
+    var pv = $('import-preview');
+    status.textContent = '';
+    pv.textContent = '';
+
+    if (!res.cards.length) {
+      status.innerHTML = '<span class="err">読み取れる行がありませんでした。タブ区切り 4 列か確かめてください。</span>';
+      $('btn-import-go').disabled = true;
       return;
     }
 
-    refreshDecks();
-    state.editing = null;
-    renderList();
-    state.history.pop();
-    showScreen('list', { replace: true });
-  }
+    if (filename) {
+      var guess = tsv.nameFromFile(filename);
+      if (!$('import-name').value) $('import-name').value = guess.name;
+      if (guess.lang) $('import-lang').value = guess.lang;
+      else $('import-lang').value = tsv.detectLang(res.cards);
+    } else if (!$('import-lang').dataset.touched) {
+      $('import-lang').value = tsv.detectLang(res.cards);
+    }
 
-  function deleteWord() {
-    if (!state.editing) return;
-    if (!window.confirm('「' + state.editing.term + '」を削除しますか？')) return;
-    Storage.deleteCustomWord(state.editing.listId, state.editing.term);
-    refreshDecks();
-    state.editing = null;
-    renderList();
-    state.history.pop();
-    showScreen('list', { replace: true });
-  }
+    var msg = '<span class="ok">' + res.cards.length.toLocaleString('ja-JP') + ' 語を読み取りました。</span>';
+    if (res.dropped) msg += ' <span class="warn">重複 ' + res.dropped + ' 行はまとめました。</span>';
+    if (res.skipped.length) msg += ' <span class="warn">' + res.skipped.length + ' 行は飛ばしました（' + res.skipped[0].reason + ' など）。</span>';
+    if (res.delimiter === ',') msg += ' <span class="warn">タブが無いのでカンマ区切りとして読みました。</span>';
+    status.innerHTML = msg;
 
-  // ---------- 設定 ----------
-
-  function fillSettingsForm() {
-    $('set-word-count').value = state.settings.wordCount;
-    $('set-direction').value = state.settings.direction;
-    $('set-order').value = state.settings.order;
-    $('set-theme').value = state.settings.theme;
-    $('set-speech').checked = state.settings.speech;
-    $('set-auto').checked = state.settings.autoAdvance;
-    $('set-auto-seconds').value = state.settings.autoSeconds;
-  }
-
-  function applySettingsForm() {
-    state.settings = Storage.saveSettings({
-      wordCount: $('set-word-count').value,
-      direction: $('set-direction').value,
-      order: $('set-order').value,
-      theme: $('set-theme').value,
-      speech: $('set-speech').checked,
-      autoAdvance: $('set-auto').checked,
-      autoSeconds: $('set-auto-seconds').value
+    res.cards.slice(0, 4).forEach(function (c) {
+      var d = el('div', 'pv');
+      d.appendChild(el('b', null, c.term + ' — ' + c.meaning));
+      if (c.example) d.appendChild(el('i', null, c.example));
+      pv.appendChild(d);
     });
-    fillSettingsForm();
-    applyTheme();
+
+    $('btn-import-go').disabled = false;
   }
 
-  function openSettings() {
-    fillSettingsForm();
-    showScreen('settings');
+  function bindImport() {
+    var ta = $('import-text');
+    var timer = null;
+    ta.addEventListener('input', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () {
+        var v = ta.value.trim();
+        if (!v) {
+          parsed = null;
+          $('import-status').textContent = '';
+          $('import-preview').textContent = '';
+          $('btn-import-go').disabled = true;
+          return;
+        }
+        reviewImport(ta.value, null);
+      }, 250);
+    });
+
+    $('import-lang').addEventListener('change', function (e) { e.target.dataset.touched = '1'; });
+
+    $('btn-pick-file').addEventListener('click', function () { $('import-file').click(); });
+    $('import-file').addEventListener('change', function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (file) readFile(file);
+      e.target.value = '';
+    });
+
+    var dz = $('dropzone');
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('over'); });
+    });
+    dz.addEventListener('drop', function (e) {
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) readFile(file);
+    });
+
+    $('btn-import-go').addEventListener('click', function () {
+      if (!parsed || !parsed.cards.length) return;
+      var name = $('import-name').value.trim() || '無題のリスト';
+      library.addList({ name: name, lang: $('import-lang').value, cards: parsed.cards })
+        .then(function (entry) {
+          toast(entry.name + ' を取り込みました');
+          renderHome();
+          stack = ['home'];
+          openDeck(entry.id);
+        })
+        .catch(function (e) { toast('保存できませんでした: ' + e.message); });
+    });
   }
 
-  function exportData() {
-    var data = JSON.stringify(Storage.exportData(), null, 2);
-    var blob = new Blob([data], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement('a');
-    link.href = url;
-    link.download = 'flashcards-backup-' + Storage.todayKey() + '.json';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    $('data-hint').textContent = 'バックアップを書き出しました。';
-  }
-
-  function importData(file) {
-    if (!file) return;
+  function readFile(file) {
     var reader = new FileReader();
     reader.onload = function () {
-      var parsed;
-      try {
-        parsed = JSON.parse(String(reader.result));
-      } catch (err) {
-        $('data-hint').textContent = '読み込みに失敗しました（JSON として解析できません）。';
-        return;
-      }
-      var result = Storage.importData(parsed);
-      if (!result.ok) {
-        $('data-hint').textContent = '読み込みに失敗しました。';
-        return;
-      }
-      state.settings = Storage.loadSettings();
-      refreshDecks();
-      fillSettingsForm();
-      applyTheme();
-      $('data-hint').textContent = 'バックアップを読み込みました。';
+      $('import-text').value = String(reader.result).slice(0, 4000000);
+      reviewImport(String(reader.result), file.name);
     };
-    reader.readAsText(file);
+    reader.onerror = function () { toast('ファイルを読めませんでした'); };
+    reader.readAsText(file, 'utf-8');
   }
 
-  // ---------- イベント ----------
+  /* ---- 学習 -------------------------------------------------------- */
 
-  function bind() {
-    $('back-btn').addEventListener('click', goBack);
-    $('study-back-btn').addEventListener('click', goBack);
-    $('settings-btn').addEventListener('click', openSettings);
-    $('settings-done-btn').addEventListener('click', goBack);
+  var st = {
+    session: null,
+    stages: [],
+    stage: 0,
+    paused: false,
+    links: [],
+    speaking: false,
+    timer: null,
+    seq: 0,
+    wakeLock: null
+  };
 
-    // デッキ画面
-    $('list-select').addEventListener('change', function (event) {
-      selectList(event.target.value);
+  /**
+   * カードを何の順で見せるか。
+   *   example-first  例文 → 単語 → 訳（既定。例文から意味を推し量って覚える）
+   *   term-first     単語 → 訳 → 例文
+   *   meaning-first  訳 → 単語 → 例文
+   */
+  function stagesFor(card) {
+    if (settings.direction === 'example-first' && card.example) return ['example', 'term', 'meaning'];
+    var base = settings.direction === 'meaning-first' ? ['meaning', 'term'] : ['term', 'meaning'];
+    if (card.example) base.push('example');
+    return base;
+  }
+
+  function startStudy() {
+    if (!deck) return;
+    var session = Session.create({
+      cards: deck.cards,
+      progress: deck.progress,
+      setSize: settings.setSize,
+      scope: settings.scope,
+      order: settings.order
     });
+    if (!session.start()) {
+      toast('出題できる語がありません');
+      return;
+    }
+    st.session = session;
+    st.paused = false;
+    speech.unlock();
+    markStudiedToday();
+    requestWakeLock();
+    show('study');
+    $('card').classList.toggle('dir-mf', settings.direction === 'meaning-first');
+    $('card').classList.toggle('dir-ef', settings.direction === 'example-first');
+    if (!settings.coachSeen) {
+      $('coach').hidden = false;
+    } else {
+      $('coach').hidden = true;
+    }
+    renderCard(true);
+  }
 
-    $('scope-group').addEventListener('click', function (event) {
-      var button = event.target.closest('[data-scope]');
-      if (!button) return;
-      state.scope = button.dataset.scope;
-      renderDeck();
+  function stopStudy() {
+    clearTimer();
+    speech.cancel();
+    releaseWakeLock();
+  }
+
+  function clearTimer() {
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    var f = $('timer-fill');
+    f.style.transition = 'none';
+    f.style.width = '0%';
+  }
+
+  function requestWakeLock() {
+    if (!navigator.wakeLock) return;
+    navigator.wakeLock.request('screen').then(function (lock) {
+      st.wakeLock = lock;
+      lock.addEventListener('release', function () { st.wakeLock = null; });
+    }).catch(function () {});
+  }
+
+  function releaseWakeLock() {
+    if (st.wakeLock) { try { st.wakeLock.release(); } catch (e) {} st.wakeLock = null; }
+  }
+
+  function currentCard() {
+    var cur = st.session && st.session.current();
+    return cur ? cur.card : null;
+  }
+
+  /**
+   * 例文の中の「おまけの語」——リストには入っていないが、
+   * この文のついでに覚えてしまいたい語（TSV の 5 列目）。
+   */
+  function linksFor(id, card) {
+    if (!settings.highlightLinks || !card.example || !card.extras || !card.extras.length) return [];
+    return links.findExtras(card.example, card.extras, deck.meta.lang);
+  }
+
+  /** 例文を描く。おまけの語には下線を引く */
+  function paintExample(card, hits) {
+    var node = $('line-example');
+    node.textContent = '';
+    var text = card.example || '';
+    if (!text) return;
+    if (!settings.highlightLinks || !hits || !hits.length) {
+      node.textContent = text;
+      return;
+    }
+    links.split(text, hits).forEach(function (part) {
+      if (part.id === null) node.appendChild(document.createTextNode(part.text));
+      else node.appendChild(el('span', 'link', part.text));
     });
+  }
 
-    $('count-presets').addEventListener('click', function (event) {
-      var chip = event.target.closest('[data-count]');
-      if (!chip || chip.disabled) return;
-      var max = Math.max(1, scopeWords().length);
-      $('deck-word-count').value = chip.dataset.count === 'all' ? max : chip.dataset.count;
-      renderDeck();
+  /** 「この例文でついでに覚える語」の行 */
+  function paintLinkNotes(hits) {
+    var node = $('line-links');
+    node.textContent = '';
+    hits.forEach(function (h) {
+      var item = el('span');
+      item.appendChild(el('b', null, h.term));
+      item.appendChild(document.createTextNode(h.meaning || ''));
+      node.appendChild(item);
     });
+  }
 
-    $('count-minus').addEventListener('click', function () {
-      $('deck-word-count').value = Math.max(1, deckCount() - 1);
-      renderDeck();
+  function renderCard(fresh) {
+    var cur = st.session && st.session.current();
+    if (!cur) return finishStudy();
+
+    var c = cur.card;
+    if (fresh) {
+      st.stages = stagesFor(c);
+      st.stage = 0;
+    }
+
+    $('line-term').textContent = c.term;
+    $('line-reading').textContent = c.reading || '';
+    $('line-meaning').textContent = c.meaning;
+    $('line-example-ja').textContent = c.exampleJa || '';
+    if (fresh) st.links = linksFor(cur.id, c);
+    paintExample(c, st.links);
+
+    var shown = st.stages.slice(0, st.stage + 1);
+    ['term', 'meaning', 'example'].forEach(function (role) {
+      var node = $('line-' + role);
+      node.classList.remove('is-lead', 'is-sub');
+      var at = shown.indexOf(role);
+      if (at === -1) return;
+      node.classList.add(at === st.stage ? 'is-lead' : 'is-sub');
     });
+    var readingNode = $('line-reading');
+    readingNode.classList.remove('is-lead', 'is-sub');
+    if (c.reading && shown.indexOf('term') !== -1 && st.stages[st.stage] === 'term') readingNode.classList.add('is-sub');
 
-    $('count-plus').addEventListener('click', function () {
-      $('deck-word-count').value = deckCount() + 1;
-      renderDeck();
+    var ejNode = $('line-example-ja');
+    ejNode.classList.remove('is-lead', 'is-sub');
+    // 例文から始める並びでは、単語が出るまで例文の訳は伏せておく（答えが先に見えてしまうため）
+    var ejReady = shown.indexOf('example') !== -1 &&
+      (settings.direction !== 'example-first' || st.stage > 0);
+    if (settings.showExampleJa && c.exampleJa && ejReady) ejNode.classList.add('is-sub');
+
+    // 例文の中で見つけた他の単語は、訳まで進んだところで意味を添える
+    var linkNode = $('line-links');
+    var showLinks = settings.highlightLinks && st.links && st.links.length &&
+      shown.indexOf('example') !== -1 && st.stage === st.stages.length - 1;
+    linkNode.classList.toggle('show', !!showLinks);
+    if (showLinks) paintLinkNotes(st.links);
+
+    // 点と進み具合
+    var dots = $('dots');
+    dots.textContent = '';
+    for (var i = 0; i < st.stages.length; i++) {
+      var d = el('i');
+      if (i <= st.stage) d.className = 'on';
+      dots.appendChild(d);
+    }
+    var total = st.session.setTotal();
+    var left = st.session.setLeft();
+    var rest = st.session.remaining();
+    $('setbar-fill').style.width = (total ? Math.round((1 - left / total) * 100) : 0) + '%';
+    $('study-count').textContent = rest ? left + ' ＋' + rest : String(left);
+
+    $('btn-fav').classList.toggle('active', !!cur.progress.fav);
+    $('card').classList.toggle('paused', st.paused);
+
+    // 操作の説明を出している間は、読み上げも自動めくりも始めない
+    if (!st.paused && $('coach').hidden) playStage();
+  }
+
+  /** 読み上げの範囲。plan ごとに、どれを声に出すか */
+  var PLAN_PARTS = {
+    full:   { example: true,  exampleJa: true,  term: true,  meaning: true },
+    short:  { example: true,  exampleJa: false, term: true,  meaning: true },
+    target: { example: true,  exampleJa: false, term: true,  meaning: false },
+    word:   { example: false, exampleJa: false, term: true,  meaning: false }
+  };
+
+  /**
+   * いまの段階で読み上げる内容。
+   * 例文から始める並びでは 例文 → 例文の訳 → 単語 → 訳 の順に声が出る。
+   */
+  function speechSteps() {
+    var c = currentCard();
+    if (!c || !settings.tts) return [];
+    var lang = library.langInfo(deck.meta.lang).speech;
+    var ja = library.langInfo('ja').speech;
+    var parts = PLAN_PARTS[settings.ttsPlan] || PLAN_PARTS.full;
+    var role = st.stages[st.stage];
+    var steps = [];
+
+    if (role === 'term') {
+      if (parts.term && c.term) steps.push({ t: c.term, l: lang });
+    } else if (role === 'meaning') {
+      if (parts.meaning && c.meaning) steps.push({ t: c.meaning, l: ja });
+    } else if (role === 'example' && c.example) {
+      if (parts.example) steps.push({ t: c.example, l: lang });
+      if (parts.exampleJa && c.exampleJa) steps.push({ t: c.exampleJa, l: ja });
+      // 単語から始める並びでは、訳を聞いたあとにもう一度例文を聞いて締める
+      if (settings.direction !== 'example-first' && parts.example && parts.exampleJa && c.exampleJa) {
+        steps.push({ t: c.example, l: lang });
+      }
+    }
+    return steps;
+  }
+
+  function playStage() {
+    clearTimer();
+    var mySeq = ++st.seq;
+    var steps = speechSteps();
+
+    var run = function (i) {
+      if (mySeq !== st.seq || st.paused) return;
+      if (i >= steps.length) return afterSpeech(mySeq);
+      speech.speak(steps[i].t, steps[i].l).then(function () {
+        run(i + 1);
+      }, function () { /* 取り消し */ });
+    };
+
+    if (steps.length) run(0);
+    else afterSpeech(mySeq);
+  }
+
+  function afterSpeech(mySeq) {
+    if (mySeq !== st.seq || st.paused) return;
+    var last = st.stage >= st.stages.length - 1;
+    // 最後の段階なら「自動送り（次の単語へ）」、途中なら「自動めくり」
+    if (last ? !settings.autoNext : !settings.autoFlip) return;
+    var ms = Math.max(300, (last ? settings.nextDelay : settings.flipDelay) * 1000);
+    var f = $('timer-fill');
+    f.style.transition = 'none';
+    f.style.width = '0%';
+    // 次のフレームで幅を伸ばす
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (mySeq !== st.seq || st.paused) return;
+        f.style.transition = 'width ' + ms + 'ms linear';
+        f.style.width = '100%';
+      });
     });
+    st.timer = setTimeout(function () {
+      if (mySeq !== st.seq || st.paused) return;
+      nextStage(true);
+    }, ms);
+  }
 
-    $('deck-word-count').addEventListener('change', renderDeck);
-    $('start-btn').addEventListener('click', startSession);
-    $('open-list-btn').addEventListener('click', openList);
+  function nextStage(auto) {
+    if (st.stage < st.stages.length - 1) {
+      st.stage++;
+      renderCard(false);
+    } else if (auto) {
+      // 判定しないまま最後まで見た → 記録せず次の単語へ
+      st.session.skip();
+      renderCard(true);
+    } else {
+      // 手で最後までめくったら読み上げをもう一度
+      playStage();
+    }
+  }
 
-    // 学習画面
-    // タップでその場を一時停止、もう一度タップで再開
-    $('card').addEventListener('click', function () {
-      if (swipeConsumedClick()) return;
-      togglePause();
+  function judge(kind) {
+    if (!st.session || !st.session.current()) return;
+    clearTimer();
+    speech.cancel();
+    st.seq++;
+    var stage = $('stage');
+    stage.classList.remove('flash-good', 'flash-bad');
+    void stage.offsetWidth;
+    stage.classList.add(kind === 'known' ? 'flash-good' : 'flash-bad');
+    flyCard(kind === 'known' ? 'up' : 'down', function () {
+      if (kind === 'known') st.session.known();
+      else st.session.unknown();
+      library.saveProgress(deck.meta.id, deck.progress);
+      renderCard(true);
     });
-    $('card').addEventListener('keydown', function (event) {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        event.stopPropagation(); // 画面全体の Space（次の段階）と重ねない
+  }
+
+  function flyCard(dir, done) {
+    var card = $('card');
+    var dy = dir === 'up' ? -window.innerHeight * 0.5 : window.innerHeight * 0.5;
+    card.classList.add('animating');
+    card.style.transform = 'translateY(' + dy + 'px)';
+    card.style.opacity = '0';
+    setTimeout(function () {
+      card.style.transition = 'none';
+      card.style.transform = '';
+      card.style.opacity = '';
+      done();
+      requestAnimationFrame(function () {
+        card.style.transition = '';
+        card.classList.remove('animating');
+      });
+    }, 200);
+  }
+
+  function togglePause(force) {
+    st.paused = force === undefined ? !st.paused : force;
+    st.seq++;
+    clearTimer();
+    speech.cancel();
+    $('card').classList.toggle('paused', st.paused);
+    $('btn-pause').innerHTML = '<svg><use href="#i-' + (st.paused ? 'play' : 'pause') + '"/></svg>';
+    if (!st.paused) playStage();
+  }
+
+  function finishStudy() {
+    clearTimer();
+    speech.cancel();
+    releaseWakeLock();
+    var s = st.session ? st.session.stats() : { answered: 0, correct: 0, learned: 0, sets: 0, elapsed: 0, accuracy: 0 };
+    library.saveProgress(deck.meta.id, deck.progress, true);
+
+    var total = deck.cards.length;
+    var learned = countLearned(deck.progress);
+    $('result-title').textContent = st.session && st.session.remaining() === 0 && learned >= total
+      ? 'リストを全部覚えました'
+      : 'おつかれさま';
+
+    var mins = Math.round(s.elapsed / 60000);
+    var grid = $('result-grid');
+    grid.textContent = '';
+    [[s.learned, '覚えた語'], [Math.round(s.accuracy * 100) + '%', '正答率'],
+     [s.answered, '判定した回数'], [(mins < 1 ? '1 分未満' : mins + ' 分'), '学習時間'],
+     [learned + ' / ' + total, 'リスト全体'], [(stats.streak || 0) + ' 日', '連続学習']]
+      .forEach(function (p) {
+        var d = el('div');
+        d.appendChild(el('b', null, String(p[0])));
+        d.appendChild(el('span', null, p[1]));
+        grid.appendChild(d);
+      });
+
+    $('btn-result-again').disabled = scopeCount(settings.scope) === 0;
+    renderHome();
+    show('result', { replace: true });
+  }
+
+  function quitStudy() {
+    if (deck) library.saveProgress(deck.meta.id, deck.progress, true);
+    st.session = null;
+    stopStudy();
+    renderHome();
+    renderDeck();
+    show('deck', { replace: true });
+  }
+
+  function bindStudy() {
+    var card = $('card');
+    var stage = $('stage');
+
+    gesture.attach(stage, {
+      onTap: function () {
+        if (!$('coach').hidden) return;
+        if (st.paused) return togglePause(false);
+        nextStage(false);
+      },
+      onLongPress: function () {
+        if (!$('coach').hidden) return;
         togglePause();
-      }
-    });
-    $('correct-btn').addEventListener('click', function () {
-      if (swipeConsumedClick()) return;
-      judge(true);
-    });
-    $('wrong-btn').addEventListener('click', function () {
-      if (swipeConsumedClick()) return;
-      judge(false);
-    });
-    $('auto-btn').addEventListener('click', toggleAuto);
-
-    bindGestures($('study-body'));
-
-    $('speak-btn').addEventListener('click', function () {
-      var step = state.steps[state.stepIndex];
-      var card = state.session && state.session.current();
-      if (!card || !step) return;
-      // いまの段階の読み上げをやり直す（終わったら自動めくりを測り直す）
-      speakSequence(step.speech || [{ text: card.word.term, ja: false }], scheduleAuto);
-    });
-
-    $('fav-btn').addEventListener('click', function () {
-      var card = state.session && state.session.current();
-      if (!card) return;
-      var isFav = Storage.toggleFavorite(card.word.id);
-      $('fav-btn').setAttribute('aria-pressed', isFav ? 'true' : 'false');
-    });
-
-    // 結果画面
-    $('again-btn').addEventListener('click', function () {
-      refreshDecks();
-      renderDeck();
-      state.history.pop();
-      showScreen('deck', { replace: true });
-      startSession();
-    });
-
-    $('result-home-btn').addEventListener('click', function () {
-      state.history = [];
-      renderHome();
-      showScreen('home', { replace: true });
-    });
-
-    // 単語一覧
-    $('search-input').addEventListener('input', function (event) {
-      state.query = event.target.value;
-      state.listLimit = LIST_PAGE;
-      renderList();
-    });
-
-    $('filter-chips').addEventListener('click', function (event) {
-      var chip = event.target.closest('[data-filter]');
-      if (!chip) return;
-      state.filter = chip.dataset.filter;
-      state.listLimit = LIST_PAGE;
-      renderList();
-    });
-
-    $('list-more-btn').addEventListener('click', function () {
-      state.listLimit += LIST_PAGE;
-      renderList();
-    });
-
-    $('add-word-btn').addEventListener('click', function () { openEditor(null); });
-    $('edit-save-btn').addEventListener('click', saveWord);
-    $('edit-delete-btn').addEventListener('click', deleteWord);
-
-    // 設定
-    $('set-theme').addEventListener('change', function () {
-      state.settings.theme = $('set-theme').value;
-      applyTheme();
-    });
-
-    $('export-btn').addEventListener('click', exportData);
-    $('import-btn').addEventListener('click', function () { $('import-file').click(); });
-    $('import-file').addEventListener('change', function (event) {
-      importData(event.target.files && event.target.files[0]);
-      event.target.value = '';
-    });
-
-    $('reset-btn').addEventListener('click', function () {
-      if (!window.confirm('すべての学習進捗と統計を削除します。よろしいですか？')) return;
-      Storage.resetProgress();
-      $('data-hint').textContent = '学習進捗をリセットしました。';
-    });
-
-    // キーボード
-    document.addEventListener('keydown', function (event) {
-      if (state.screen !== 'study') return;
-      var tag = (event.target.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
-
-      // スワイプと同じ向きの割り当て（↑ = 〇、↓ = ✕、← = 前、→ = 次）
-      if (event.key === ' ' || event.key === 'Enter') {
-        event.preventDefault();
-        advance();
-      } else if (event.key === 'ArrowUp' || event.key === '2') {
-        event.preventDefault();
-        judge(true);
-      } else if (event.key === 'ArrowDown' || event.key === '1') {
-        event.preventDefault();
-        judge(false);
-      } else if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        prevWord();
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        nextWord();
-      } else if (event.key.toLowerCase() === 'p') {
-        event.preventDefault();
-        toggleAuto();
+        if (navigator.vibrate) navigator.vibrate(12);
+      },
+      onDrag: function (dx, dy) {
+        var adx = Math.abs(dx), ady = Math.abs(dy);
+        card.style.transform = 'translate(' + dx * 0.5 + 'px,' + dy * 0.6 + 'px) rotate(' + (dx * 0.012) + 'deg)';
+        stage.classList.toggle('cue-up-on', ady > adx && dy < -24);
+        stage.classList.toggle('cue-down-on', ady > adx && dy > 24);
+      },
+      onDragEnd: function () {
+        card.style.transform = '';
+        stage.classList.remove('cue-up-on', 'cue-down-on');
+      },
+      onSwipe: function (dir) {
+        if (!$('coach').hidden) return;
+        if (dir === 'up') judge('known');
+        else if (dir === 'down') judge('unknown');
+        else if (dir === 'left') { clearTimer(); speech.cancel(); st.seq++; st.session.skip(); renderCard(true); }
+        else if (dir === 'right') {
+          clearTimer(); speech.cancel(); st.seq++;
+          if (st.session.back()) renderCard(true);
+        }
       }
     });
 
-    // タブが非表示になったら自動めくりを止める
+    $('btn-pause').addEventListener('click', function () { togglePause(); });
+    $('btn-sound').addEventListener('click', function () {
+      settings.tts = !settings.tts;
+      saveSettings();
+      updateSoundIcon();
+      speech.cancel();
+      st.seq++;
+      if (!st.paused) playStage();
+    });
+    $('btn-fav').addEventListener('click', function () {
+      if (!st.session) return;
+      var on = st.session.toggleFav();
+      $('btn-fav').classList.toggle('active', on);
+      library.saveProgress(deck.meta.id, deck.progress);
+    });
+    $('btn-quit').addEventListener('click', quitStudy);
+    $('btn-coach-ok').addEventListener('click', function () {
+      $('coach').hidden = true;
+      settings.coachSeen = true;
+      saveSettings();
+      speech.unlock();
+      renderCard(false);
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (!document.querySelector('.view.on') || document.querySelector('.view.on').dataset.view !== 'study') return;
+      if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+      var k = e.key;
+      if (k === ' ' || k === 'Enter') { e.preventDefault(); nextStage(false); }
+      else if (k === 'ArrowUp' || k === '2') { e.preventDefault(); judge('known'); }
+      else if (k === 'ArrowDown' || k === '1') { e.preventDefault(); judge('unknown'); }
+      else if (k === 'ArrowLeft') { e.preventDefault(); st.seq++; clearTimer(); speech.cancel(); if (st.session.back()) renderCard(true); }
+      else if (k === 'ArrowRight') { e.preventDefault(); st.seq++; clearTimer(); speech.cancel(); st.session.skip(); renderCard(true); }
+      else if (k === 'p' || k === 'P') togglePause();
+      else if (k === 'Escape') quitStudy();
+    });
+
     document.addEventListener('visibilitychange', function () {
-      if (document.hidden) clearAutoTimer();
-      else if (state.screen === 'study') scheduleAuto();
+      if (document.hidden && st.session) togglePause(true);
     });
   }
 
-  // ---------- 起動 ----------
+  function updateSoundIcon() {
+    $('btn-sound').innerHTML = '<svg><use href="#i-sound-' + (settings.tts ? 'on' : 'off') + '"/></svg>';
+    $('btn-sound').classList.toggle('off', !settings.tts);
+  }
 
-  applyTheme();
-  bind();
-  renderHome();
-  showScreen('home', { replace: true });
-})();
+  /* ---- 結果画面 ---------------------------------------------------- */
+
+  function bindResult() {
+    $('btn-result-home').addEventListener('click', function () {
+      renderDeck();
+      show('deck', { replace: true });
+    });
+    $('btn-result-again').addEventListener('click', function () {
+      renderDeck();
+      startStudy();
+    });
+  }
+
+  /* ---- 設定画面 ---------------------------------------------------- */
+
+  function renderSettings() {
+    document.querySelectorAll('#theme-picker button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.theme === settings.theme);
+    });
+    $('set-order').value = settings.order;
+    $('set-direction').value = settings.direction;
+    $('set-show-example-ja').checked = settings.showExampleJa;
+    $('set-links').checked = settings.highlightLinks;
+    $('set-tts').checked = settings.tts;
+    $('set-tts-plan').value = settings.ttsPlan;
+    $('set-rate').value = settings.rate;
+    $('rate-out').textContent = Number(settings.rate).toFixed(2).replace(/0$/, '');
+    $('set-auto-flip').checked = settings.autoFlip;
+    $('set-flip-delay').value = settings.flipDelay;
+    $('flip-delay-out').textContent = settings.flipDelay.toFixed(1) + ' 秒';
+    $('set-auto-next').checked = settings.autoNext;
+    $('set-next-delay').value = settings.nextDelay;
+    $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + ' 秒';
+    renderVoiceFields();
+    $('storage-note').textContent = '保存先: ' + (store.usingIndexedDb() ? 'IndexedDB' : 'localStorage') +
+      (speech.supported ? '' : ' · この端末では読み上げが使えません');
+  }
+
+  function renderVoiceFields() {
+    var box = $('voice-fields');
+    box.textContent = '';
+    if (!speech.supported) return;
+    var used = {};
+    library.lists().forEach(function (l) { used[l.lang] = true; });
+    used.ja = true;
+    Object.keys(used).forEach(function (code) {
+      var list = speech.voicesFor(library.langInfo(code).speech);
+      if (!list.length) return;
+      var label = el('label', 'field row');
+      label.appendChild(el('span', null, library.langInfo(code).name + 'の声'));
+      var sel = el('select');
+      var auto = el('option', null, '自動');
+      auto.value = '';
+      sel.appendChild(auto);
+      list.forEach(function (v) {
+        var o = el('option', null, v.name + '（' + v.lang + '）');
+        o.value = v.voiceURI;
+        sel.appendChild(o);
+      });
+      sel.value = settings.voices[code] || '';
+      sel.addEventListener('change', function () {
+        settings.voices[code] = sel.value;
+        speech.setVoice(library.langInfo(code).speech, sel.value);
+        saveSettings();
+        if (sel.value) speech.speak(code === 'ja' ? 'テスト' : 'test', library.langInfo(code).speech);
+      });
+      label.appendChild(sel);
+      box.appendChild(label);
+    });
+  }
+
+  function bindSettings() {
+    $('btn-settings').addEventListener('click', function () {
+      renderSettings();
+      show('settings');
+    });
+    document.querySelectorAll('#theme-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.theme = b.dataset.theme;
+        applyTheme();
+        saveSettings();
+        renderSettings();
+      });
+    });
+    $('set-order').addEventListener('change', function (e) { settings.order = e.target.value; saveSettings(); });
+    $('set-direction').addEventListener('change', function (e) { settings.direction = e.target.value; saveSettings(); });
+    $('set-show-example-ja').addEventListener('change', function (e) { settings.showExampleJa = e.target.checked; saveSettings(); });
+    $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
+    $('set-tts').addEventListener('change', function (e) { settings.tts = e.target.checked; saveSettings(); updateSoundIcon(); });
+    $('set-tts-plan').addEventListener('change', function (e) { settings.ttsPlan = e.target.value; saveSettings(); });
+    $('set-rate').addEventListener('input', function (e) {
+      settings.rate = Number(e.target.value);
+      speech.setRate(settings.rate);
+      $('rate-out').textContent = settings.rate.toFixed(2).replace(/0$/, '');
+      saveSettings();
+    });
+    $('set-auto-flip').addEventListener('change', function (e) { settings.autoFlip = e.target.checked; saveSettings(); });
+    $('set-flip-delay').addEventListener('input', function (e) {
+      settings.flipDelay = Number(e.target.value);
+      $('flip-delay-out').textContent = settings.flipDelay.toFixed(1) + ' 秒';
+      saveSettings();
+    });
+    $('set-auto-next').addEventListener('change', function (e) { settings.autoNext = e.target.checked; saveSettings(); });
+    $('set-next-delay').addEventListener('input', function (e) {
+      settings.nextDelay = Number(e.target.value);
+      $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + ' 秒';
+      saveSettings();
+    });
+
+    $('btn-backup').addEventListener('click', function () {
+      library.exportAll().then(function (data) {
+        download('flashcards-backup-' + todayKey() + '.json', JSON.stringify(data), 'application/json');
+      });
+    });
+    $('btn-restore').addEventListener('click', function () { $('restore-file').click(); });
+    $('restore-file').addEventListener('change', function (e) {
+      var file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var data = JSON.parse(String(reader.result));
+          library.importAll(data).then(function () {
+            return store.get('settings');
+          }).then(function (s) {
+            if (s) settings = Object.assign({}, DEFAULTS, s);
+            applyTheme();
+            return library.loadAllProgress();
+          }).then(function () {
+            renderHome();
+            renderSettings();
+            toast('読み込みました');
+          });
+        } catch (err) {
+          toast('読み込めませんでした');
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+    $('btn-coach-again').addEventListener('click', function () {
+      settings.coachSeen = false;
+      saveSettings();
+      toast('次の学習で操作の説明を表示します');
+    });
+    $('btn-wipe').addEventListener('click', function () {
+      if (!confirm('取り込んだリストも進み具合も、すべて消します。よろしいですか？')) return;
+      store.keys().then(function (keys) {
+        return Promise.all(keys.map(function (k) { return store.del(k); }));
+      }).then(function () { location.reload(); });
+    });
+  }
+
+  /* ---- 立ち上げ ---------------------------------------------------- */
+
+  function bindCommon() {
+    document.querySelectorAll('[data-back]').forEach(function (b) {
+      b.addEventListener('click', back);
+    });
+    $('btn-import').addEventListener('click', openImport);
+    global.addEventListener('pagehide', function () { store.flush(); });
+    global.addEventListener('beforeunload', function () { store.flush(); });
+  }
+
+  function boot() {
+    fillLangSelect();
+    bindCommon();
+    bindDeck();
+    bindCards();
+    bindImport();
+    bindStudy();
+    bindResult();
+    bindSettings();
+
+    Promise.all([store.get('settings'), store.get('stats'), library.load()])
+      .then(function (r) {
+        if (r[0]) settings = Object.assign({}, DEFAULTS, migrateSettings(r[0]));
+        if (r[1]) stats = Object.assign({ days: {}, streak: 0, last: '' }, r[1]);
+        applyTheme();
+        speech.setRate(settings.rate);
+        updateSoundIcon();
+        return library.loadAllProgress();
+      })
+      .then(function () {
+        renderHome();
+        stack = ['home'];
+        render('home');
+        return speech.init();
+      })
+      .then(function () {
+        Object.keys(settings.voices || {}).forEach(function (code) {
+          speech.setVoice(library.langInfo(code).speech, settings.voices[code]);
+        });
+      })
+      .catch(function (e) {
+        console.error(e);
+        toast('起動に失敗しました: ' + e.message);
+        render('home');
+      });
+
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})(typeof window !== 'undefined' ? window : globalThis);
