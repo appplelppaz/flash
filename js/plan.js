@@ -6,6 +6,7 @@
  *   quick  例文は表示も読み上げもしない。単語 → 訳 だけをテンポよく回す。
  *
  * 並び（direction）と読み上げの範囲（ttsPlan）は、どちらのモードでも効く。
+ * repeat を 2 にすると、1 枚のカードでこの組をもう一度はじめから見せ、読み上げる。
  */
 (function (global) {
   'use strict';
@@ -40,6 +41,17 @@
   }
 
   /**
+   * 1 枚のカードで、段階の組を何周見せるか（1〜3）。
+   * 2 にすると 例文 → 単語 → 訳 を見せ終えたあと、もう一度はじめから同じ組を見せる。
+   * @param {Object} opts {repeat}
+   * @returns {number}
+   */
+  function passes(opts) {
+    var n = Math.round(Number((opts || {}).repeat) || 1);
+    return Math.max(1, Math.min(3, n));
+  }
+
+  /**
    * その段階で読み上げる内容。
    * @param {Object} card
    * @param {string} role  'term' | 'meaning' | 'example'
@@ -66,7 +78,8 @@
     if (parts.example) steps.push({ t: card.example, l: o.lang });
     if (parts.exampleJa && card.exampleJa) steps.push({ t: card.exampleJa, l: o.ja });
     // 単語から始める並びでは、訳を聞いたあとにもう一度例文を聞いて締める
-    if (o.direction !== 'example-first' && parts.example && parts.exampleJa && card.exampleJa) {
+    if (o.direction !== 'example-first' &&
+        parts.example && parts.exampleJa && card.exampleJa) {
       steps.push({ t: card.example, l: o.lang });
     }
     return steps;
@@ -77,7 +90,7 @@
     return (opts || {}).mode !== 'quick';
   }
 
-  var api = { stages: stages, speech: speech, showsExample: showsExample, PARTS: PARTS };
+  var api = { stages: stages, passes: passes, speech: speech, showsExample: showsExample, PARTS: PARTS };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;

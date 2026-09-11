@@ -130,3 +130,50 @@ test('見せる段階と読み上げが噛み合っている（読む物の無�
     }
   }
 });
+
+// --- 繰り返し（覚えるために、同じ組をもう一度はじめから見せる） ---
+
+test('繰り返しの既定は 1 周', () => {
+  assert.strictEqual(plan.passes(), 1);
+  assert.strictEqual(plan.passes({}), 1);
+  assert.strictEqual(plan.passes({ repeat: 1 }), 1);
+});
+
+test('2× は 2 周', () => {
+  assert.strictEqual(plan.passes({ repeat: 2 }), 2);
+});
+
+test('周の数は 1〜3 に収める', () => {
+  assert.strictEqual(plan.passes({ repeat: 0 }), 1);
+  assert.strictEqual(plan.passes({ repeat: -5 }), 1);
+  assert.strictEqual(plan.passes({ repeat: 2.4 }), 2);
+  assert.strictEqual(plan.passes({ repeat: 3 }), 3);
+  assert.strictEqual(plan.passes({ repeat: 99 }), 3);
+  assert.strictEqual(plan.passes({ repeat: 'ふつう' }), 1);
+});
+
+test('繰り返しても、1 周の中身は変わらない', () => {
+  const one = { mode: 'full', direction: 'example-first', ttsPlan: 'full', repeat: 1 };
+  const two = Object.assign({}, one, { repeat: 2 });
+  assert.deepStrictEqual(plan.stages(CARD, two), plan.stages(CARD, one));
+  ['term', 'meaning', 'example'].forEach((role) => {
+    assert.deepStrictEqual(say(role, two), say(role, one), role + ' が周ごとに変わっている');
+  });
+});
+
+test('2 周めは、1 周めと同じ順で同じものを読み上げる', () => {
+  const o = Object.assign({ mode: 'full', direction: 'example-first', ttsPlan: 'full', repeat: 2 }, L);
+  const lap = () => plan.stages(CARD, o).flatMap((role) => plan.speech(CARD, role, o).map((s) => s.t));
+  assert.deepStrictEqual(lap(), [CARD.example, CARD.exampleJa, CARD.term, CARD.meaning]);
+  assert.deepStrictEqual(lap().concat(lap()), [
+    CARD.example, CARD.exampleJa, CARD.term, CARD.meaning,
+    CARD.example, CARD.exampleJa, CARD.term, CARD.meaning
+  ], '2 周ぶんは 1 周を 2 つつないだもの');
+});
+
+test('単語だけモードでも周は数えられる（単語 → 訳 を 2 周）', () => {
+  const o = Object.assign({ mode: 'quick', direction: 'term-first', ttsPlan: 'full', repeat: 2 }, L);
+  assert.strictEqual(plan.passes(o), 2);
+  assert.deepStrictEqual(plan.stages(CARD, o), ['term', 'meaning']);
+  assert.deepStrictEqual(plan.speech(CARD, 'example', o), [], '例文は読まないまま');
+});

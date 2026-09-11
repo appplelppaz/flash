@@ -39,6 +39,7 @@
     highlightLinks: true,
     tts: true,
     ttsPlan: 'full',
+    repeat: 1,
     rate: 1,
     voices: {},
     autoFlip: true,
@@ -69,6 +70,7 @@
       s.nextDelay = Math.max(s.delay, 1.5);
     }
     if (s.mode !== 'full' && s.mode !== 'quick') s.mode = 'full';
+    if (s.repeat !== 1 && s.repeat !== 2) s.repeat = 1;
     var sizes = [10, 20, 30, 50, 100];
     if (sizes.indexOf(s.setSize) === -1) {
       s.setSize = sizes.reduce(function (best, n) {
@@ -262,6 +264,9 @@
     document.querySelectorAll('#order-picker button').forEach(function (b) {
       b.classList.toggle('on', b.dataset.order === settings.order);
     });
+    document.querySelectorAll('#repeat-picker button').forEach(function (b) {
+      b.classList.toggle('on', Number(b.dataset.repeat) === settings.repeat);
+    });
     document.querySelectorAll('#size-presets button').forEach(function (b) {
       b.classList.toggle('on', Number(b.dataset.size) === settings.setSize);
     });
@@ -290,6 +295,13 @@
     document.querySelectorAll('#order-picker button').forEach(function (b) {
       b.addEventListener('click', function () {
         settings.order = b.dataset.order;
+        saveSettings();
+        renderDeck();
+      });
+    });
+    document.querySelectorAll('#repeat-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.repeat = Number(b.dataset.repeat);
         saveSettings();
         renderDeck();
       });
@@ -559,6 +571,8 @@
     session: null,
     stages: [],
     stage: 0,
+    passes: 1,
+    pass: 0,
     paused: false,
     links: [],
     speaking: false,
@@ -573,6 +587,7 @@
       mode: settings.mode,
       direction: settings.direction,
       ttsPlan: settings.ttsPlan,
+      repeat: settings.repeat,
       lang: deck ? library.langInfo(deck.meta.lang).speech : 'en-US',
       ja: library.langInfo('ja').speech
     };
@@ -580,6 +595,11 @@
 
   function stagesFor(card) {
     return plan.stages(card, planOpts());
+  }
+
+  /** いまの段階が、このカードで最後の段階か（繰り返しの最後の周かどうかも見る） */
+  function atCardEnd() {
+    return st.stage >= st.stages.length - 1 && st.pass >= st.passes - 1;
   }
 
   function startStudy() {
@@ -676,7 +696,7 @@
    * CSS の決め打ちでは「短い語なのに小さい」「長い例文がはみ出す」が避けられない。
    * ここでは入る大きさを実際に測って二分探索で決める。
    */
-  var FIT_MIN = 18;
+  var FIT_MIN = 14;
   var FIT_MAX = 150;
 
   function fitCard() {
@@ -699,11 +719,25 @@
     var lo = FIT_MIN;
     var best = FIT_MIN;
 
+    // 語の途中で折り返さない指定にしてあるので、入りきらない語は行からはみ出す。
+    // 高さだけでなく、行ごとの横のはみ出しも見て大きさを決める
+    var rows = [];
+    for (var k = 0; k < inner.children.length; k++) {
+      var row = inner.children[k];
+      if (row.offsetParent !== null || row.getClientRects().length) rows.push(row);
+    }
+
     var fits = function (size) {
       card.style.setProperty('--lead', size.toFixed(1) + 'px');
-      return inner.scrollHeight <= availH && inner.scrollWidth <= availW + 1;
+      if (inner.scrollHeight > availH) return false;
+      if (inner.scrollWidth > availW + 1) return false;
+      for (var j = 0; j < rows.length; j++) {
+        if (rows[j].scrollWidth > rows[j].clientWidth + 1) return false;
+      }
+      return true;
     };
 
+    card.classList.remove('allow-break');
     if (fits(hi)) {
       best = hi;
     } else {
@@ -713,6 +747,9 @@
       }
     }
     card.style.setProperty('--lead', best.toFixed(1) + 'px');
+
+    // いちばん小さくしても入らないほど長い語は、割ってでも見せる
+    if (!fits(best)) card.classList.add('allow-break');
   }
 
   /** 「この例文でついでに覚える語」の行 */
@@ -734,7 +771,9 @@
     var c = cur.card;
     if (fresh) {
       st.stages = stagesFor(c);
+      st.passes = plan.passes(planOpts());
       st.stage = 0;
+      st.pass = 0;
     }
 
     $('line-term').textContent = c.term;
@@ -772,11 +811,14 @@
     if (showLinks) paintLinkNotes(st.links);
 
     // 点と進み具合
+    // 点は「段階 × 周」。繰り返しているときは、いま何周目かも点で分かる
     var dots = $('dots');
     dots.textContent = '';
-    for (var i = 0; i < st.stages.length; i++) {
+    var done = st.pass * st.stages.length + st.stage;
+    for (var i = 0; i < st.stages.length * st.passes; i++) {
       var d = el('i');
-      if (i <= st.stage) d.className = 'on';
+      if (i <= done) d.className = 'on';
+      if (i && i % st.stages.length === 0) d.classList.add('lap');
       dots.appendChild(d);
     }
     var total = st.session.setTotal();
@@ -821,8 +863,9 @@
 
   function afterSpeech(mySeq) {
     if (mySeq !== st.seq || st.paused) return;
-    var last = st.stage >= st.stages.length - 1;
+    var last = atCardEnd();
     // 最後の段階なら「自動送り（次の単語へ）」、途中なら「自動めくり」
+    // （繰り返しの周と周の間は、カードの中の送りなので「自動めくり」のほう）
     if (last ? !settings.autoNext : !settings.autoFlip) return;
     var quick = settings.mode === 'quick';
     var delay = last
@@ -849,6 +892,11 @@
   function nextStage(auto) {
     if (st.stage < st.stages.length - 1) {
       st.stage++;
+      renderCard(false);
+    } else if (st.pass < st.passes - 1) {
+      // 同じカードをもう一周。はじめの段階に戻して見せ直す
+      st.pass++;
+      st.stage = 0;
       renderCard(false);
     } else if (auto) {
       // 判定しないまま最後まで見た → 記録せず次の単語へ
@@ -1069,6 +1117,7 @@
     $('set-links').checked = settings.highlightLinks;
     $('set-tts').checked = settings.tts;
     $('set-tts-plan').value = settings.ttsPlan;
+    $('set-repeat').value = String(settings.repeat);
     $('set-rate').value = settings.rate;
     $('rate-out').textContent = Number(settings.rate).toFixed(2).replace(/0$/, '');
     $('set-auto-flip').checked = settings.autoFlip;
@@ -1139,6 +1188,7 @@
     $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
     $('set-tts').addEventListener('change', function (e) { settings.tts = e.target.checked; saveSettings(); updateSoundIcon(); });
     $('set-tts-plan').addEventListener('change', function (e) { settings.ttsPlan = e.target.value; saveSettings(); });
+    $('set-repeat').addEventListener('change', function (e) { settings.repeat = Number(e.target.value); saveSettings(); });
     $('set-rate').addEventListener('input', function (e) {
       settings.rate = Number(e.target.value);
       speech.setRate(settings.rate);
