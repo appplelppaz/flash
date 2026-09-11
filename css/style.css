@@ -581,6 +581,8 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .card.allow-break .line { overflow-wrap: anywhere; word-break: break-word; }
 .line.is-lead, .line.is-sub { display: block; }
 .line.is-sub { color: var(--muted); font-weight: 520; }
+/* まだ出さない行。場所だけ取って、あとから行が増えても単語が動かないようにする */
+.line.hold { visibility: hidden; }
 
 /*
   文字の大きさは JS が測って決める（fitCard）。

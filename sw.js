@@ -4,7 +4,7 @@
  * アプリ本体（HTML/CSS/JS/アイコン）は入れたときにまとめて保存する。
  * 大きな単語リスト（js/data/*.js）は一度開いたときに保存し、次からは取りに行かない。
  */
-var VERSION = 'v10';
+var VERSION = 'v11';
 var SHELL_CACHE = 'flash-shell-' + VERSION;
 var DATA_CACHE = 'flash-data-' + VERSION;
 
