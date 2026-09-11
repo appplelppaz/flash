@@ -10,15 +10,15 @@
   var store = global.Flash.store;
 
   var LANGS = {
-    en: { name: '英語', speech: 'en-US', flag: 'EN' },
-    zh: { name: '中国語', speech: 'zh-CN', flag: '中' },
-    es: { name: 'スペイン語', speech: 'es-ES', flag: 'ES' },
-    fr: { name: 'フランス語', speech: 'fr-FR', flag: 'FR' },
-    ja: { name: '日本語', speech: 'ja-JP', flag: '日' },
-    de: { name: 'ドイツ語', speech: 'de-DE', flag: 'DE' },
-    it: { name: 'イタリア語', speech: 'it-IT', flag: 'IT' },
-    ko: { name: '韓国語', speech: 'ko-KR', flag: '韓' },
-    pt: { name: 'ポルトガル語', speech: 'pt-PT', flag: 'PT' }
+    en: { name: 'English', speech: 'en-US', flag: 'EN' },
+    zh: { name: 'Chinese', speech: 'zh-CN', flag: 'ZH' },
+    es: { name: 'Spanish', speech: 'es-ES', flag: 'ES' },
+    fr: { name: 'French', speech: 'fr-FR', flag: 'FR' },
+    ja: { name: 'Japanese', speech: 'ja-JP', flag: 'JA' },
+    de: { name: 'German', speech: 'de-DE', flag: 'DE' },
+    it: { name: 'Italian', speech: 'it-IT', flag: 'IT' },
+    ko: { name: 'Korean', speech: 'ko-KR', flag: 'KO' },
+    pt: { name: 'Portuguese', speech: 'pt-PT', flag: 'PT' }
   };
 
   var BUILTIN = [

@@ -24,6 +24,7 @@ test('訳が無い行は飛ばして理由を返す', () => {
   assert.strictEqual(res.cards.length, 1);
   assert.strictEqual(res.skipped.length, 1);
   assert.strictEqual(res.skipped[0].line, 2);
+  assert.strictEqual(res.skipped[0].reason, 'no meaning');
 });
 
 test('抽出器の候補ファイル（8 列・ヘッダーつき）も読める', () => {

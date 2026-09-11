@@ -1,17 +1,17 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Flashcards</title>
-<meta name="description" content="Netflix 字幕から作った語彙リストで学べる、スワイプ操作のフラッシュカード">
+<meta name="description" content="Swipe-driven flashcards for word lists built from Netflix subtitles.">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0e0f13" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f7f7f9" media="(prefers-color-scheme: light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="単語帳">
+<meta name="apple-mobile-web-app-title" content="Flashcards">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/style.css">
@@ -21,6 +21,7 @@
 <svg class="sprite" aria-hidden="true">
   <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.5-2-3.4-2.3.9a7.7 7.7 0 0 0-1.7-1L15 2.5H9l-.4 2.5a7.7 7.7 0 0 0-1.7 1l-2.3-.9-2 3.4L4.6 11a7.6 7.6 0 0 0 0 2l-2 1.5 2 3.4 2.3-.9c.5.4 1.1.8 1.7 1l.4 2.5h6l.4-2.5c.6-.2 1.2-.6 1.7-1l2.3.9 2-3.4-2-1.5Z"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 4.5v15M16 4.5v15"/></symbol>
@@ -28,38 +29,54 @@
   <symbol id="i-sound-off" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="m17 9.5 4 5m0-5-4 5"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9L12 3.5Z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 13 4.5 4.5L19 7"/></symbol>
   <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 20V9m0 0 4 4m-4-4-4 4M5 5h14"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 7h3l3 3.5M3 17h3l9-11h3M15 18h3M13.5 13.5 15 15"/><path d="m16 3 3 3-3 3M16 15l3 3-3 3"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 20V5m0 0-3 3m3-3 3 3M17 4v15m0 0 3-3m-3 3-3-3"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8.2V20l-4 1.6v-8.4z"/></symbol>
+  <symbol id="i-stack" viewBox="0 0 24 24"><path d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m3 12.5 9 4.8 9-4.8M3 17l9 4.8 9-4.8"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M11 4.5 12.8 9.2 17.5 11l-4.7 1.8L11 17.5 9.2 12.8 4.5 11l4.7-1.8z"/><path d="M18.5 3.5v4M20.5 5.5h-4"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 3 6 13.5h5L10.5 21 18 10.5h-5z"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c3.2 3.2 5 5.9 5 9a5 5 0 0 1-10 0c0-1.6.5-2.8 1.3-3.9.3 1.2 1 2 1.9 2 1.2 0 1.8-1.3 1.8-3.2 0-1.3 0-2.6 0-3.9Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></symbol>
+  <symbol id="i-percent" viewBox="0 0 24 24"><path d="m18.5 5.5-13 13"/><circle cx="7.5" cy="7.5" r="2.2"/><circle cx="16.5" cy="16.5" r="2.2"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4 11a8 8 0 0 1 13.3-5.9L20 7.5M20 3.5v4h-4"/><path d="M20 13a8 8 0 0 1-13.3 5.9L4 16.5M4 20.5v-4h4"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.2 2.4 3.4 5.3 3.4 8.5S14.2 18.1 12 20.5c-2.2-2.4-3.4-5.3-3.4-8.5S9.8 5.9 12 3.5Z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></symbol>
+  <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-tap" viewBox="0 0 24 24"><path d="M9 11V6a2 2 0 0 1 4 0v6"/><path d="M13 12V9.5a2 2 0 0 1 4 0V15a6 6 0 0 1-6 6h-.5a5 5 0 0 1-4-2L4 15.5a1.8 1.8 0 0 1 3-2l2 2"/></symbol>
 </svg>
 
 <main id="app">
 
-<!-- ホーム ------------------------------------------------------------- -->
+<!-- Home --------------------------------------------------------------- -->
 <section class="view" id="view-home" data-view="home">
   <header class="topbar">
-    <h1 class="title">単語帳</h1>
-    <button class="icon" id="btn-settings" aria-label="設定"><svg><use href="#i-gear"/></svg></button>
+    <h1 class="title">Flashcards</h1>
+    <button class="icon" id="btn-settings" aria-label="Settings" title="Settings"><svg><use href="#i-gear"/></svg></button>
   </header>
   <div class="scroll">
     <div class="totals" id="home-totals"></div>
-    <h2 class="section-label">リスト</h2>
     <div class="decklist" id="decklist"></div>
-    <p class="foot-note">Netflix の字幕から作った TSV は ＋ から取り込めます。</p>
   </div>
-  <button class="fab" id="btn-import" aria-label="リストを取り込む"><svg><use href="#i-plus"/></svg></button>
+  <button class="fab" id="btn-import" aria-label="Import a list" title="Import"><svg><use href="#i-plus"/></svg></button>
 </section>
 
-<!-- リスト（学習の準備）------------------------------------------------ -->
+<!-- Deck — set up a session --------------------------------------------- -->
 <section class="view" id="view-deck" data-view="deck">
   <header class="topbar">
-    <button class="icon" data-back aria-label="戻る"><svg><use href="#i-back"/></svg></button>
+    <button class="icon" data-back aria-label="Back"><svg><use href="#i-back"/></svg></button>
     <h1 class="title" id="deck-title">—</h1>
-    <button class="icon" id="btn-deck-cards" aria-label="単語一覧"><svg><use href="#i-list"/></svg></button>
+    <button class="icon" id="btn-deck-cards" aria-label="Word list" title="Word list"><svg><use href="#i-list"/></svg></button>
   </header>
   <div class="scroll">
     <div class="deck-head">
@@ -67,106 +84,119 @@
       <div class="deck-nums" id="deck-nums"></div>
     </div>
 
-    <h2 class="section-label">出題する範囲</h2>
-    <div class="segmented" id="scope-picker">
-      <button data-scope="new" class="on">未学習</button>
-      <button data-scope="weak">苦手</button>
-      <button data-scope="fav">★</button>
-      <button data-scope="all">すべて</button>
+    <div class="picker" id="mode-row">
+      <svg class="picker-icon" aria-hidden="true"><use href="#i-text"/></svg>
+      <div class="segmented" id="mode-picker" role="group" aria-label="Mode">
+        <button data-mode="full" class="on">Sentence</button>
+        <button data-mode="quick">Word</button>
+      </div>
     </div>
 
-    <h2 class="section-label">1 セットの語数</h2>
-    <div class="stepper">
-      <button id="size-minus" aria-label="減らす">−</button>
-      <output id="size-value">20</output>
-      <button id="size-plus" aria-label="増やす">＋</button>
+    <div class="picker" id="order-row">
+      <svg class="picker-icon" aria-hidden="true"><use href="#i-sort"/></svg>
+      <div class="segmented" id="order-picker" role="group" aria-label="Order">
+        <button data-order="listed" class="on" aria-label="In order" title="In order"><svg><use href="#i-list"/></svg></button>
+        <button data-order="random" aria-label="Shuffle" title="Shuffle"><svg><use href="#i-shuffle"/></svg></button>
+        <button data-order="weak-first" aria-label="Weak first" title="Weak first"><svg><use href="#i-close"/></svg></button>
+      </div>
     </div>
-    <div class="chips" id="size-presets">
-      <button data-size="10">10</button>
-      <button data-size="20">20</button>
-      <button data-size="30">30</button>
-      <button data-size="50">50</button>
-      <button data-size="100">100</button>
+
+    <div class="picker" id="scope-row">
+      <svg class="picker-icon" aria-hidden="true"><use href="#i-filter"/></svg>
+      <div class="segmented" id="scope-picker" role="group" aria-label="Range">
+        <button data-scope="new" class="on" aria-label="New" title="New"><svg><use href="#i-sparkle"/></svg></button>
+        <button data-scope="weak" aria-label="Weak" title="Weak"><svg><use href="#i-close"/></svg></button>
+        <button data-scope="fav" aria-label="Favorites" title="Favorites"><svg><use href="#i-star"/></svg></button>
+        <button data-scope="all" aria-label="All" title="All"><svg><use href="#i-stack"/></svg></button>
+      </div>
+    </div>
+
+    <div class="picker" id="size-row">
+      <svg class="picker-icon" aria-hidden="true"><use href="#i-stack"/></svg>
+      <div class="segmented" id="size-presets" role="group" aria-label="Words per set">
+        <button data-size="10">10</button>
+        <button data-size="20" class="on">20</button>
+        <button data-size="30">30</button>
+        <button data-size="50">50</button>
+        <button data-size="100">100</button>
+      </div>
     </div>
 
     <div class="row-actions">
-      <button class="ghost" id="btn-deck-reset">進み具合をリセット</button>
-      <button class="ghost danger" id="btn-deck-delete">リストを削除</button>
+      <button class="ghost" id="btn-deck-reset" aria-label="Reset progress" title="Reset progress"><svg><use href="#i-repeat"/></svg></button>
+      <button class="ghost danger" id="btn-deck-delete" aria-label="Delete list" title="Delete list"><svg><use href="#i-trash"/></svg></button>
     </div>
   </div>
   <div class="bottom-bar">
-    <button class="primary" id="btn-start"><svg><use href="#i-play"/></svg><span id="start-label">学習を始める</span></button>
+    <button class="primary" id="btn-start" aria-label="Start"><svg><use href="#i-play"/></svg><span id="start-label"></span></button>
   </div>
 </section>
 
-<!-- 単語一覧 ----------------------------------------------------------- -->
+<!-- Word list ----------------------------------------------------------- -->
 <section class="view" id="view-cards" data-view="cards">
   <header class="topbar">
-    <button class="icon" data-back aria-label="戻る"><svg><use href="#i-back"/></svg></button>
-    <h1 class="title" id="cards-title">単語一覧</h1>
-    <button class="icon" id="btn-export-tsv" aria-label="TSV を書き出す"><svg><use href="#i-download"/></svg></button>
+    <button class="icon" data-back aria-label="Back"><svg><use href="#i-back"/></svg></button>
+    <h1 class="title" id="cards-title">—</h1>
+    <button class="icon" id="btn-export-tsv" aria-label="Export TSV" title="Export TSV"><svg><use href="#i-download"/></svg></button>
   </header>
   <div class="searchbar">
     <svg class="search-icon"><use href="#i-search"/></svg>
-    <input type="search" id="cards-search" placeholder="単語・訳・例文を検索" autocomplete="off">
+    <input type="search" id="cards-search" placeholder="Search" autocomplete="off">
   </div>
-  <div class="segmented small" id="cards-filter">
-    <button data-filter="all" class="on">すべて</button>
-    <button data-filter="new">未学習</button>
-    <button data-filter="learned">学習済み</button>
-    <button data-filter="weak">苦手</button>
-    <button data-filter="fav">★</button>
+  <div class="segmented small" id="cards-filter" role="group" aria-label="Filter">
+    <button data-filter="all" class="on" aria-label="All" title="All"><svg><use href="#i-stack"/></svg></button>
+    <button data-filter="new" aria-label="New" title="New"><svg><use href="#i-sparkle"/></svg></button>
+    <button data-filter="learned" aria-label="Learned" title="Learned"><svg><use href="#i-check"/></svg></button>
+    <button data-filter="weak" aria-label="Weak" title="Weak"><svg><use href="#i-close"/></svg></button>
+    <button data-filter="fav" aria-label="Favorites" title="Favorites"><svg><use href="#i-star"/></svg></button>
   </div>
   <div class="scroll" id="cards-scroll">
     <div class="wordlist" id="wordlist"></div>
-    <div class="more" id="cards-more" hidden><button class="ghost" id="btn-cards-more">もっと見る</button></div>
+    <div class="more" id="cards-more" hidden>
+      <button class="ghost" id="btn-cards-more" aria-label="Show more" title="Show more"><svg><use href="#i-down"/></svg></button>
+    </div>
   </div>
 </section>
 
-<!-- 取り込み ----------------------------------------------------------- -->
+<!-- Import -------------------------------------------------------------- -->
 <section class="view" id="view-import" data-view="import">
   <header class="topbar">
-    <button class="icon" data-back aria-label="戻る"><svg><use href="#i-back"/></svg></button>
-    <h1 class="title">リストを取り込む</h1>
+    <button class="icon" data-back aria-label="Back"><svg><use href="#i-back"/></svg></button>
+    <h1 class="title">Import</h1>
     <span class="icon spacer"></span>
   </header>
   <div class="scroll">
-    <p class="lead">
-      1 行 1 語、タブ区切りで 4 列。<br>
-      <code>単語 ⇥ 日本語訳 ⇥ 例文 ⇥ 例文の日本語訳</code>
-    </p>
-
     <label class="field">
-      <span>リスト名</span>
-      <input type="text" id="import-name" placeholder="例：ペーパーハウス S1" autocomplete="off">
+      <span>Name</span>
+      <input type="text" id="import-name" placeholder="La casa de papel S1" autocomplete="off">
     </label>
 
     <label class="field">
-      <span>言語</span>
+      <span>Language</span>
       <select id="import-lang"></select>
     </label>
 
     <div class="dropzone" id="dropzone">
+      <button class="ghost" id="btn-pick-file" aria-label="Choose a file" title="Choose a file"><svg><use href="#i-upload"/></svg></button>
       <input type="file" id="import-file" accept=".tsv,.txt,.csv" hidden>
-      <button class="ghost" id="btn-pick-file">ファイルを選ぶ</button>
-      <span class="or">または下に貼り付け</span>
+      <code>word ⇥ 訳 ⇥ example ⇥ 例文の訳 ⇥ extra=訳</code>
     </div>
 
     <textarea id="import-text" class="paste" rows="8" spellcheck="false"
-      placeholder="ここに TSV を貼り付け"></textarea>
+      placeholder="Paste TSV here"></textarea>
 
     <div class="import-status" id="import-status"></div>
     <div class="preview" id="import-preview"></div>
   </div>
   <div class="bottom-bar">
-    <button class="primary" id="btn-import-go" disabled><svg><use href="#i-check"/></svg><span>取り込む</span></button>
+    <button class="primary" id="btn-import-go" disabled aria-label="Import"><svg><use href="#i-check"/></svg><span id="import-count"></span></button>
   </div>
 </section>
 
-<!-- 学習 --------------------------------------------------------------- -->
+<!-- Study --------------------------------------------------------------- -->
 <section class="view study" id="view-study" data-view="study">
   <div class="study-top">
-    <button class="icon ghosty" id="btn-quit" aria-label="やめる"><svg><use href="#i-close"/></svg></button>
+    <button class="icon ghosty" id="btn-quit" aria-label="Quit"><svg><use href="#i-close"/></svg></button>
     <div class="setbar"><i id="setbar-fill"></i></div>
     <div class="study-count" id="study-count">0</div>
   </div>
@@ -190,133 +220,147 @@
   <div class="study-bottom">
     <div class="dots" id="dots"></div>
     <div class="controls">
-      <button class="icon ghosty" id="btn-fav" aria-label="お気に入り"><svg><use href="#i-star"/></svg></button>
-      <button class="icon ghosty" id="btn-pause" aria-label="一時停止"><svg><use href="#i-pause"/></svg></button>
-      <button class="icon ghosty" id="btn-sound" aria-label="読み上げ"><svg><use href="#i-sound-on"/></svg></button>
+      <button class="icon ghosty" id="btn-fav" aria-label="Favorite"><svg><use href="#i-star"/></svg></button>
+      <button class="icon ghosty" id="btn-pause" aria-label="Pause"><svg><use href="#i-pause"/></svg></button>
+      <button class="icon ghosty" id="btn-sound" aria-label="Sound"><svg><use href="#i-sound-on"/></svg></button>
     </div>
     <div class="timer"><i id="timer-fill"></i></div>
   </div>
 
   <div class="coach" id="coach" hidden>
     <div class="coach-box">
-      <h2>指の操作</h2>
-      <ul>
-        <li><b>タップ</b><span>次を表示</span></li>
-        <li><b>長押し</b><span>一時停止 / 再開</span></li>
-        <li><b>上へスワイプ</b><span>覚えた</span></li>
-        <li><b>下へスワイプ</b><span>まだ</span></li>
-        <li><b>左へスワイプ</b><span>次の単語へ</span></li>
-        <li><b>右へスワイプ</b><span>前の単語へ</span></li>
+      <ul class="gestures">
+        <li><svg><use href="#i-tap"/></svg><b>Tap</b><svg class="to"><use href="#i-next"/></svg></li>
+        <li><svg><use href="#i-tap"/></svg><b>Hold</b><svg class="to"><use href="#i-pause"/></svg></li>
+        <li><svg><use href="#i-up"/></svg><b>Up</b><svg class="to good"><use href="#i-check"/></svg></li>
+        <li><svg><use href="#i-down"/></svg><b>Down</b><svg class="to bad"><use href="#i-close"/></svg></li>
+        <li><svg><use href="#i-back"/></svg><b>Left</b><svg class="to"><use href="#i-next"/></svg></li>
+        <li><svg><use href="#i-next"/></svg><b>Right</b><svg class="to"><use href="#i-back"/></svg></li>
       </ul>
-      <button class="primary" id="btn-coach-ok">はじめる</button>
+      <button class="primary" id="btn-coach-ok" aria-label="Start"><svg><use href="#i-play"/></svg></button>
     </div>
   </div>
 </section>
 
-<!-- 結果 --------------------------------------------------------------- -->
+<!-- Result -------------------------------------------------------------- -->
 <section class="view" id="view-result" data-view="result">
   <div class="scroll center">
-    <div class="result-mark"><svg><use href="#i-check"/></svg></div>
-    <h1 class="result-title" id="result-title">おつかれさま</h1>
+    <div class="result-mark" id="result-mark"><svg><use href="#i-check"/></svg></div>
     <div class="result-grid" id="result-grid"></div>
   </div>
   <div class="bottom-bar two">
-    <button class="ghost" id="btn-result-home">リストへ</button>
-    <button class="primary" id="btn-result-again">続ける</button>
+    <button class="ghost" id="btn-result-home" aria-label="Back to list" title="Back to list"><svg><use href="#i-list"/></svg></button>
+    <button class="primary" id="btn-result-again" aria-label="Keep going"><svg><use href="#i-play"/></svg></button>
   </div>
 </section>
 
-<!-- 設定 --------------------------------------------------------------- -->
+<!-- Settings ------------------------------------------------------------ -->
 <section class="view" id="view-settings" data-view="settings">
   <header class="topbar">
-    <button class="icon" data-back aria-label="戻る"><svg><use href="#i-back"/></svg></button>
-    <h1 class="title">設定</h1>
+    <button class="icon" data-back aria-label="Back"><svg><use href="#i-back"/></svg></button>
+    <h1 class="title">Settings</h1>
     <span class="icon spacer"></span>
   </header>
   <div class="scroll">
-    <h2 class="section-label">見た目</h2>
-    <div class="segmented" id="theme-picker">
-      <button data-theme="auto" class="on">端末に合わせる</button>
-      <button data-theme="light">ライト</button>
-      <button data-theme="dark">ダーク</button>
+    <div class="segmented" id="theme-picker" role="group" aria-label="Theme">
+      <button data-theme="auto" class="on" aria-label="System" title="System"><svg><use href="#i-auto"/></svg></button>
+      <button data-theme="light" aria-label="Light" title="Light"><svg><use href="#i-sun"/></svg></button>
+      <button data-theme="dark" aria-label="Dark" title="Dark"><svg><use href="#i-moon"/></svg></button>
     </div>
 
-    <h2 class="section-label">出題</h2>
+    <h2 class="section-label">Cards</h2>
     <label class="field row">
-      <span>出題の順番</span>
-      <select id="set-order">
-        <option value="listed">リストの順</option>
-        <option value="random">ランダム</option>
-        <option value="weak-first">苦手を先に</option>
+      <span>Mode</span>
+      <select id="set-mode">
+        <option value="full">Sentence</option>
+        <option value="quick">Word only</option>
       </select>
     </label>
     <label class="field row">
-      <span>出す順番</span>
+      <span>Order</span>
+      <select id="set-order">
+        <option value="listed">In order</option>
+        <option value="random">Shuffle</option>
+        <option value="weak-first">Weak first</option>
+      </select>
+    </label>
+    <label class="field row">
+      <span>Sequence</span>
       <select id="set-direction">
-        <option value="example-first">例文 → 単語 → 訳</option>
-        <option value="term-first">単語 → 訳 → 例文</option>
-        <option value="meaning-first">訳 → 単語 → 例文</option>
+        <option value="example-first">Example first</option>
+        <option value="term-first">Word first</option>
+        <option value="meaning-first">Meaning first</option>
       </select>
     </label>
     <label class="switch">
-      <span>例文の訳も表示する</span>
+      <span>Show example translation</span>
       <input type="checkbox" id="set-show-example-ja">
       <i></i>
     </label>
     <label class="switch">
-      <span>例文のおまけの語も覚える</span>
+      <span>Show extra words</span>
       <input type="checkbox" id="set-links" checked>
       <i></i>
     </label>
 
-    <h2 class="section-label">読み上げ</h2>
+    <h2 class="section-label">Speech</h2>
     <label class="switch">
-      <span>読み上げる</span>
+      <span>Read aloud</span>
       <input type="checkbox" id="set-tts" checked>
       <i></i>
     </label>
     <label class="field row">
-      <span>読み上げる範囲</span>
+      <span>Read</span>
       <select id="set-tts-plan">
-        <option value="full">すべて（例文の訳も）</option>
-        <option value="short">例文の訳はとばす</option>
-        <option value="target">現地語だけ</option>
-        <option value="word">単語だけ</option>
+        <option value="full">Everything</option>
+        <option value="short">Skip example JA</option>
+        <option value="target">Target only</option>
+        <option value="word">Word only</option>
       </select>
     </label>
     <label class="field row">
-      <span>速さ <output id="rate-out">1.0</output></span>
+      <span>Rate <output id="rate-out">1.0</output></span>
       <input type="range" id="set-rate" min="0.5" max="1.6" step="0.05" value="1">
     </label>
     <div id="voice-fields"></div>
 
-    <h2 class="section-label">自動めくり・自動送り</h2>
+    <h2 class="section-label">Timing</h2>
     <label class="switch">
-      <span>自動めくり（次の表示へ）</span>
+      <span>Auto flip</span>
       <input type="checkbox" id="set-auto-flip" checked>
       <i></i>
     </label>
     <label class="field row">
-      <span>めくるまで <output id="flip-delay-out">1.0 秒</output></span>
+      <span>Flip after <output id="flip-delay-out">1.0s</output></span>
       <input type="range" id="set-flip-delay" min="0.5" max="10" step="0.5" value="1">
     </label>
     <label class="switch">
-      <span>自動送り（次の単語へ）</span>
+      <span>Auto next</span>
       <input type="checkbox" id="set-auto-next" checked>
       <i></i>
     </label>
     <label class="field row">
-      <span>送るまで <output id="next-delay-out">1.5 秒</output></span>
+      <span>Next after <output id="next-delay-out">1.5s</output></span>
       <input type="range" id="set-next-delay" min="0.5" max="10" step="0.5" value="1.5">
     </label>
 
-    <h2 class="section-label">データ</h2>
-    <div class="row-actions column">
-      <button class="ghost" id="btn-backup">バックアップを書き出す</button>
-      <button class="ghost" id="btn-restore">バックアップを読み込む</button>
+    <h2 class="section-label">Timing · word only</h2>
+    <label class="field row">
+      <span>Flip after <output id="quick-flip-out">0.5s</output></span>
+      <input type="range" id="set-quick-flip" min="0.3" max="5" step="0.1" value="0.5">
+    </label>
+    <label class="field row">
+      <span>Next after <output id="quick-next-out">0.8s</output></span>
+      <input type="range" id="set-quick-next" min="0.3" max="5" step="0.1" value="0.8">
+    </label>
+
+    <h2 class="section-label">Data</h2>
+    <div class="row-actions">
+      <button class="ghost" id="btn-backup" aria-label="Export backup" title="Export backup"><svg><use href="#i-download"/></svg></button>
+      <button class="ghost" id="btn-restore" aria-label="Import backup" title="Import backup"><svg><use href="#i-upload"/></svg></button>
       <input type="file" id="restore-file" accept=".json" hidden>
-      <button class="ghost" id="btn-coach-again">指の操作をもう一度見る</button>
-      <button class="ghost danger" id="btn-wipe">すべて消す</button>
+      <button class="ghost" id="btn-coach-again" aria-label="Show gestures" title="Show gestures"><svg><use href="#i-tap"/></svg></button>
+      <button class="ghost danger" id="btn-wipe" aria-label="Erase everything" title="Erase everything"><svg><use href="#i-trash"/></svg></button>
     </div>
     <p class="foot-note" id="storage-note"></p>
   </div>
@@ -332,6 +376,7 @@
 <script src="js/library.js"></script>
 <script src="js/speech.js"></script>
 <script src="js/links.js"></script>
+<script src="js/plan.js"></script>
 <script src="js/gesture.js"></script>
 <script src="js/app.js"></script>
 </body>

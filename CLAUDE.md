@@ -23,11 +23,19 @@ iPhone 向けのフラッシュカードアプリ（ビルド不要のバニラ 
    （単語 / 日本語訳 / 例文 / 例文の日本語訳 / おまけの語 `語=訳; 語=訳`）。
    保存先は `vocab/<lang>_<title>.tsv`。5 列目を落とした 4 列の古い形も読める。
 
+## 画面を作る・直すとき
+
+`.claude/skills/minimal-ui/SKILL.md` に従う。要点は——
+**画面の表記は英語、文字は最小限、アイコンで通じるものはアイコン、装飾は足さない**。
+ただし中身（訳・ユーザーの入力・単語データ）は日本語のまま扱う。
+アイコンだけのボタンには必ず `aria-label` を付ける。
+
 ## コードを触るとき
 
 - ビルドは無い。`npm start`（`python3 -m http.server 8080`）で開いて確かめる。
 - 変更したら `npm test`（`node --test`）を通す。
-- `js/tsv.js` `js/session.js` `js/links.js` は **DOM に依存させない**（Node のテストから読んでいる）。
+- `js/tsv.js` `js/session.js` `js/links.js` `js/plan.js` は **DOM に依存させない**（Node のテストから読んでいる）。
+- カードを「何の順で見せ、何を読み上げるか」は `js/plan.js` が決める。app.js に直接書かない。
 - `js/data/*.js` の単語データは**書き換えない**。語数を変えたときは `js/library.js` の
   `BUILTIN` の `count` も直す（テストが照合している）。
 - ファイルを増やしたら `sw.js` の `SHELL` に加え、`VERSION` を上げる。

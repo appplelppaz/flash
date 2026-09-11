@@ -7,9 +7,19 @@
 
   var F = global.Flash;
   var store = F.store, library = F.library, speech = F.speech, gesture = F.gesture;
-  var Session = F.session, tsv = F.tsv, links = F.links;
+  var Session = F.session, tsv = F.tsv, links = F.links, plan = F.plan;
 
   var $ = function (id) { return document.getElementById(id); };
+  /** スプライトのアイコンを 1 つ作る */
+  var icon = function (id, label) {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#' + id);
+    svg.appendChild(use);
+    if (label) svg.setAttribute('aria-label', label);
+    else svg.setAttribute('aria-hidden', 'true');
+    return svg;
+  };
   var el = function (tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -23,6 +33,7 @@
     theme: 'auto',
     setSize: 20,
     order: 'listed',
+    mode: 'full',
     direction: 'example-first',
     showExampleJa: false,
     highlightLinks: true,
@@ -34,6 +45,8 @@
     flipDelay: 1,
     autoNext: true,
     nextDelay: 1.5,
+    quickFlipDelay: 0.5,
+    quickNextDelay: 0.8,
     coachSeen: false,
     scope: 'new'
   };
@@ -54,6 +67,13 @@
     if (s.delay !== undefined && s.flipDelay === undefined) {
       s.flipDelay = s.delay;
       s.nextDelay = Math.max(s.delay, 1.5);
+    }
+    if (s.mode !== 'full' && s.mode !== 'quick') s.mode = 'full';
+    var sizes = [10, 20, 30, 50, 100];
+    if (sizes.indexOf(s.setSize) === -1) {
+      s.setSize = sizes.reduce(function (best, n) {
+        return Math.abs(n - (s.setSize || 20)) < Math.abs(best - (s.setSize || 20)) ? n : best;
+      }, 20);
     }
     delete s.auto;
     delete s.delay;
@@ -153,9 +173,10 @@
 
       var body = el('div', 'body');
       body.appendChild(el('div', 'name', l.name));
-      var sub = info.name + ' · ' + l.count.toLocaleString('ja-JP') + ' 語';
-      if (!l.builtin) sub += ' · 取り込み';
-      body.appendChild(el('div', 'sub', sub));
+      var sub = el('div', 'sub');
+      sub.appendChild(el('span', null, l.count.toLocaleString('en-US')));
+      if (!l.builtin) sub.appendChild(icon('i-upload', 'imported'));
+      body.appendChild(sub);
       var bar = el('div', 'bar');
       var fill = el('i');
       fill.style.width = pct + '%';
@@ -170,17 +191,19 @@
 
     if (!lists.length) {
       var empty = el('div', 'empty');
-      empty.innerHTML = 'リストがありません。<br>右下の ＋ から TSV を取り込んでください。';
+      empty.appendChild(icon('i-plus'));
+      empty.appendChild(el('p', null, 'Import a word list'));
       box.appendChild(empty);
     }
 
+    // 数字とアイコンだけ。語で説明しない
     var totals = $('home-totals');
     totals.textContent = '';
-    [[lists.length, 'リスト'], [totalLearned.toLocaleString('ja-JP'), '学習済み'], [(stats.streak || 0) + ' 日', '連続']]
+    [['i-stack', lists.length], ['i-check', totalLearned.toLocaleString('en-US')], ['i-flame', stats.streak || 0]]
       .forEach(function (pair) {
         var d = el('div');
-        d.appendChild(el('b', null, String(pair[0])));
-        d.appendChild(el('span', null, pair[1]));
+        d.appendChild(el('b', null, String(pair[1])));
+        d.appendChild(icon(pair[0]));
         totals.appendChild(d);
       });
   }
@@ -193,14 +216,14 @@
     var meta = library.find(id);
     if (!meta) return;
     $('deck-title').textContent = meta.name;
-    $('deck-nums').innerHTML = '読み込み中…';
+    $('deck-nums').textContent = '';
     show('deck');
     Promise.all([library.cards(id), library.progress(id)]).then(function (r) {
       deck = { meta: meta, cards: r[0], progress: r[1] };
       renderDeck();
     }).catch(function (e) {
-      $('deck-nums').textContent = '読み込めませんでした';
-      toast(e.message || '読み込めませんでした');
+      $('deck-nums').textContent = '';
+      toast(e.message || 'Could not load');
     });
   }
 
@@ -220,23 +243,32 @@
     ring.textContent = '';
     ring.appendChild(el('span', null, pct + '%'));
 
-    var weak = scopeCount('weak'), fav = scopeCount('fav'), fresh = scopeCount('new');
-    $('deck-nums').innerHTML =
-      '<div><b>' + total.toLocaleString('ja-JP') + '</b> 語 / 学習済み <b>' + learned.toLocaleString('ja-JP') + '</b></div>' +
-      '<div>未学習 <b>' + fresh + '</b> · 苦手 <b>' + weak + '</b> · ★ <b>' + fav + '</b></div>';
+    var nums = $('deck-nums');
+    nums.textContent = '';
+    [['i-stack', total], ['i-sparkle', scopeCount('new')], ['i-close', scopeCount('weak')], ['i-star', scopeCount('fav')]]
+      .forEach(function (pair) {
+        var row = el('span', 'num');
+        row.appendChild(icon(pair[0]));
+        row.appendChild(el('b', null, pair[1].toLocaleString('en-US')));
+        nums.appendChild(row);
+      });
 
     document.querySelectorAll('#scope-picker button').forEach(function (b) {
       b.classList.toggle('on', b.dataset.scope === settings.scope);
     });
-    $('size-value').textContent = settings.setSize;
+    document.querySelectorAll('#mode-picker button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.mode === settings.mode);
+    });
+    document.querySelectorAll('#order-picker button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.order === settings.order);
+    });
     document.querySelectorAll('#size-presets button').forEach(function (b) {
       b.classList.toggle('on', Number(b.dataset.size) === settings.setSize);
     });
 
     var n = Math.min(settings.setSize, scopeCount(settings.scope));
-    $('start-label').textContent = n > 0 ? n + ' 語で学習を始める' : '出題できる語がありません';
+    $('start-label').textContent = n > 0 ? String(n) : '';
     $('btn-start').disabled = n === 0;
-    $('btn-deck-delete').textContent = deck.meta.builtin ? 'リストは削除できません' : 'リストを削除';
     $('btn-deck-delete').disabled = !!deck.meta.builtin;
   }
 
@@ -248,8 +280,20 @@
         renderDeck();
       });
     });
-    $('size-minus').addEventListener('click', function () { bumpSize(-5); });
-    $('size-plus').addEventListener('click', function () { bumpSize(5); });
+    document.querySelectorAll('#mode-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.mode = b.dataset.mode;
+        saveSettings();
+        renderDeck();
+      });
+    });
+    document.querySelectorAll('#order-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.order = b.dataset.order;
+        saveSettings();
+        renderDeck();
+      });
+    });
     document.querySelectorAll('#size-presets button').forEach(function (b) {
       b.addEventListener('click', function () {
         settings.setSize = Number(b.dataset.size);
@@ -260,30 +304,24 @@
     $('btn-deck-cards').addEventListener('click', function () { openCards(); });
     $('btn-start').addEventListener('click', startStudy);
     $('btn-deck-reset').addEventListener('click', function () {
-      if (!deck || !confirm('「' + deck.meta.name + '」の進み具合を消します。よろしいですか？')) return;
+      if (!deck || !confirm('Reset progress for "' + deck.meta.name + '"?')) return;
       library.resetProgress(deck.meta.id).then(function () {
         deck.progress = library.cachedProgress(deck.meta.id);
         renderDeck();
-        toast('進み具合をリセットしました');
+        toast('Progress reset');
       });
     });
     $('btn-deck-delete').addEventListener('click', function () {
       if (!deck || deck.meta.builtin) return;
-      if (!confirm('「' + deck.meta.name + '」を削除します。よろしいですか？')) return;
+      if (!confirm('Delete "' + deck.meta.name + '"?')) return;
       library.deleteList(deck.meta.id).then(function () {
         deck = null;
         renderHome();
         stack = ['home'];
         render('home');
-        toast('削除しました');
+        toast('Deleted');
       });
     });
-  }
-
-  function bumpSize(d) {
-    settings.setSize = Math.max(5, Math.min(200, settings.setSize + d));
-    saveSettings();
-    renderDeck();
   }
 
   /* ---- 単語一覧 ---------------------------------------------------- */
@@ -347,11 +385,10 @@
     cardsShown += slice.length;
 
     if (!matched.length) {
-      var empty = el('div', 'empty', '見つかりませんでした');
-      box.appendChild(empty);
+      box.appendChild(el('div', 'empty'));
     }
     $('cards-more').hidden = cardsShown >= matched.length;
-    $('cards-title').textContent = deck.meta.name + '（' + matched.length.toLocaleString('ja-JP') + '）';
+    $('cards-title').textContent = deck.meta.name + ' · ' + matched.length.toLocaleString('en-US');
   }
 
   function bindCards() {
@@ -420,7 +457,8 @@
     pv.textContent = '';
 
     if (!res.cards.length) {
-      status.innerHTML = '<span class="err">読み取れる行がありませんでした。タブ区切り 4 列か確かめてください。</span>';
+      status.innerHTML = '<span class="err">Nothing to read</span>';
+      $('import-count').textContent = '';
       $('btn-import-go').disabled = true;
       return;
     }
@@ -434,11 +472,12 @@
       $('import-lang').value = tsv.detectLang(res.cards);
     }
 
-    var msg = '<span class="ok">' + res.cards.length.toLocaleString('ja-JP') + ' 語を読み取りました。</span>';
-    if (res.dropped) msg += ' <span class="warn">重複 ' + res.dropped + ' 行はまとめました。</span>';
-    if (res.skipped.length) msg += ' <span class="warn">' + res.skipped.length + ' 行は飛ばしました（' + res.skipped[0].reason + ' など）。</span>';
-    if (res.delimiter === ',') msg += ' <span class="warn">タブが無いのでカンマ区切りとして読みました。</span>';
+    var msg = '<span class="ok">' + res.cards.length.toLocaleString('en-US') + '</span>';
+    if (res.dropped) msg += ' <span class="warn">merged ' + res.dropped + '</span>';
+    if (res.skipped.length) msg += ' <span class="warn">skipped ' + res.skipped.length + '</span>';
+    if (res.delimiter === ',') msg += ' <span class="warn">read as CSV</span>';
     status.innerHTML = msg;
+    $('import-count').textContent = String(res.cards.length);
 
     res.cards.slice(0, 4).forEach(function (c) {
       var d = el('div', 'pv');
@@ -462,6 +501,7 @@
           $('import-status').textContent = '';
           $('import-preview').textContent = '';
           $('btn-import-go').disabled = true;
+          $('import-count').textContent = '';
           return;
         }
         reviewImport(ta.value, null);
@@ -491,15 +531,15 @@
 
     $('btn-import-go').addEventListener('click', function () {
       if (!parsed || !parsed.cards.length) return;
-      var name = $('import-name').value.trim() || '無題のリスト';
+      var name = $('import-name').value.trim() || 'Untitled';
       library.addList({ name: name, lang: $('import-lang').value, cards: parsed.cards })
         .then(function (entry) {
-          toast(entry.name + ' を取り込みました');
+          toast(entry.name);
           renderHome();
           stack = ['home'];
           openDeck(entry.id);
         })
-        .catch(function (e) { toast('保存できませんでした: ' + e.message); });
+        .catch(function (e) { toast('Could not save: ' + e.message); });
     });
   }
 
@@ -509,7 +549,7 @@
       $('import-text').value = String(reader.result).slice(0, 4000000);
       reviewImport(String(reader.result), file.name);
     };
-    reader.onerror = function () { toast('ファイルを読めませんでした'); };
+    reader.onerror = function () { toast('Could not read the file'); };
     reader.readAsText(file, 'utf-8');
   }
 
@@ -527,17 +567,19 @@
     wakeLock: null
   };
 
-  /**
-   * カードを何の順で見せるか。
-   *   example-first  例文 → 単語 → 訳（既定。例文から意味を推し量って覚える）
-   *   term-first     単語 → 訳 → 例文
-   *   meaning-first  訳 → 単語 → 例文
-   */
+  /** いまの設定を plan に渡す形にする */
+  function planOpts() {
+    return {
+      mode: settings.mode,
+      direction: settings.direction,
+      ttsPlan: settings.ttsPlan,
+      lang: deck ? library.langInfo(deck.meta.lang).speech : 'en-US',
+      ja: library.langInfo('ja').speech
+    };
+  }
+
   function stagesFor(card) {
-    if (settings.direction === 'example-first' && card.example) return ['example', 'term', 'meaning'];
-    var base = settings.direction === 'meaning-first' ? ['meaning', 'term'] : ['term', 'meaning'];
-    if (card.example) base.push('example');
-    return base;
+    return plan.stages(card, planOpts());
   }
 
   function startStudy() {
@@ -550,7 +592,7 @@
       order: settings.order
     });
     if (!session.start()) {
-      toast('出題できる語がありません');
+      toast('Nothing to study');
       return;
     }
     st.session = session;
@@ -559,8 +601,10 @@
     markStudiedToday();
     requestWakeLock();
     show('study');
+    var quick = settings.mode === 'quick';
     $('card').classList.toggle('dir-mf', settings.direction === 'meaning-first');
-    $('card').classList.toggle('dir-ef', settings.direction === 'example-first');
+    $('card').classList.toggle('dir-ef', !quick && settings.direction === 'example-first');
+    $('card').classList.toggle('quick', quick);
     if (!settings.coachSeen) {
       $('coach').hidden = false;
     } else {
@@ -604,6 +648,7 @@
    * この文のついでに覚えてしまいたい語（TSV の 5 列目）。
    */
   function linksFor(id, card) {
+    if (!plan.showsExample(planOpts())) return [];
     if (!settings.highlightLinks || !card.example || !card.extras || !card.extras.length) return [];
     return links.findExtras(card.example, card.extras, deck.meta.lang);
   }
@@ -720,7 +765,8 @@
 
     // 例文の中で見つけた他の単語は、訳まで進んだところで意味を添える
     var linkNode = $('line-links');
-    var showLinks = settings.highlightLinks && st.links && st.links.length &&
+    var showLinks = plan.showsExample(planOpts()) && settings.highlightLinks &&
+      st.links && st.links.length &&
       shown.indexOf('example') !== -1 && st.stage === st.stages.length - 1;
     linkNode.classList.toggle('show', !!showLinks);
     if (showLinks) paintLinkNotes(st.links);
@@ -737,7 +783,7 @@
     var left = st.session.setLeft();
     var rest = st.session.remaining();
     $('setbar-fill').style.width = (total ? Math.round((1 - left / total) * 100) : 0) + '%';
-    $('study-count').textContent = rest ? left + ' ＋' + rest : String(left);
+    $('study-count').textContent = rest ? left + '+' + rest : String(left);
 
     $('btn-fav').classList.toggle('active', !!cur.progress.fav);
     $('card').classList.toggle('paused', st.paused);
@@ -748,40 +794,12 @@
     if (!st.paused && $('coach').hidden) playStage();
   }
 
-  /** 読み上げの範囲。plan ごとに、どれを声に出すか */
-  var PLAN_PARTS = {
-    full:   { example: true,  exampleJa: true,  term: true,  meaning: true },
-    short:  { example: true,  exampleJa: false, term: true,  meaning: true },
-    target: { example: true,  exampleJa: false, term: true,  meaning: false },
-    word:   { example: false, exampleJa: false, term: true,  meaning: false }
-  };
-
-  /**
-   * いまの段階で読み上げる内容。
-   * 例文から始める並びでは 例文 → 例文の訳 → 単語 → 訳 の順に声が出る。
-   */
+  /** いまの段階で読み上げる内容 */
   function speechSteps() {
+    if (!settings.tts) return [];
     var c = currentCard();
-    if (!c || !settings.tts) return [];
-    var lang = library.langInfo(deck.meta.lang).speech;
-    var ja = library.langInfo('ja').speech;
-    var parts = PLAN_PARTS[settings.ttsPlan] || PLAN_PARTS.full;
-    var role = st.stages[st.stage];
-    var steps = [];
-
-    if (role === 'term') {
-      if (parts.term && c.term) steps.push({ t: c.term, l: lang });
-    } else if (role === 'meaning') {
-      if (parts.meaning && c.meaning) steps.push({ t: c.meaning, l: ja });
-    } else if (role === 'example' && c.example) {
-      if (parts.example) steps.push({ t: c.example, l: lang });
-      if (parts.exampleJa && c.exampleJa) steps.push({ t: c.exampleJa, l: ja });
-      // 単語から始める並びでは、訳を聞いたあとにもう一度例文を聞いて締める
-      if (settings.direction !== 'example-first' && parts.example && parts.exampleJa && c.exampleJa) {
-        steps.push({ t: c.example, l: lang });
-      }
-    }
-    return steps;
+    if (!c) return [];
+    return plan.speech(c, st.stages[st.stage], planOpts());
   }
 
   function playStage() {
@@ -806,7 +824,11 @@
     var last = st.stage >= st.stages.length - 1;
     // 最後の段階なら「自動送り（次の単語へ）」、途中なら「自動めくり」
     if (last ? !settings.autoNext : !settings.autoFlip) return;
-    var ms = Math.max(300, (last ? settings.nextDelay : settings.flipDelay) * 1000);
+    var quick = settings.mode === 'quick';
+    var delay = last
+      ? (quick ? settings.quickNextDelay : settings.nextDelay)
+      : (quick ? settings.quickFlipDelay : settings.flipDelay);
+    var ms = Math.max(250, delay * 1000);
     var f = $('timer-fill');
     f.style.transition = 'none';
     f.style.width = '0%';
@@ -892,20 +914,21 @@
 
     var total = deck.cards.length;
     var learned = countLearned(deck.progress);
-    $('result-title').textContent = st.session && st.session.remaining() === 0 && learned >= total
-      ? 'リストを全部覚えました'
-      : 'おつかれさま';
+    var done = st.session && st.session.remaining() === 0 && learned >= total;
+    $('result-mark').classList.toggle('all-done', !!done);
 
     var mins = Math.round(s.elapsed / 60000);
     var grid = $('result-grid');
     grid.textContent = '';
-    [[s.learned, '覚えた語'], [Math.round(s.accuracy * 100) + '%', '正答率'],
-     [s.answered, '判定した回数'], [(mins < 1 ? '1 分未満' : mins + ' 分'), '学習時間'],
-     [learned + ' / ' + total, 'リスト全体'], [(stats.streak || 0) + ' 日', '連続学習']]
-      .forEach(function (p) {
+    [['i-check', s.learned],
+     ['i-percent', Math.round(s.accuracy * 100)],
+     ['i-clock', mins < 1 ? '<1' : mins],
+     ['i-stack', learned + '/' + total],
+     ['i-flame', stats.streak || 0]]
+      .forEach(function (pair) {
         var d = el('div');
-        d.appendChild(el('b', null, String(p[0])));
-        d.appendChild(el('span', null, p[1]));
+        d.appendChild(el('b', null, String(pair[1])));
+        d.appendChild(icon(pair[0]));
         grid.appendChild(d);
       });
 
@@ -1040,6 +1063,7 @@
       b.classList.toggle('on', b.dataset.theme === settings.theme);
     });
     $('set-order').value = settings.order;
+    $('set-mode').value = settings.mode;
     $('set-direction').value = settings.direction;
     $('set-show-example-ja').checked = settings.showExampleJa;
     $('set-links').checked = settings.highlightLinks;
@@ -1049,13 +1073,17 @@
     $('rate-out').textContent = Number(settings.rate).toFixed(2).replace(/0$/, '');
     $('set-auto-flip').checked = settings.autoFlip;
     $('set-flip-delay').value = settings.flipDelay;
-    $('flip-delay-out').textContent = settings.flipDelay.toFixed(1) + ' 秒';
+    $('flip-delay-out').textContent = settings.flipDelay.toFixed(1) + 's';
     $('set-auto-next').checked = settings.autoNext;
     $('set-next-delay').value = settings.nextDelay;
-    $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + ' 秒';
+    $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + 's';
+    $('set-quick-flip').value = settings.quickFlipDelay;
+    $('quick-flip-out').textContent = settings.quickFlipDelay.toFixed(1) + 's';
+    $('set-quick-next').value = settings.quickNextDelay;
+    $('quick-next-out').textContent = settings.quickNextDelay.toFixed(1) + 's';
     renderVoiceFields();
-    $('storage-note').textContent = '保存先: ' + (store.usingIndexedDb() ? 'IndexedDB' : 'localStorage') +
-      (speech.supported ? '' : ' · この端末では読み上げが使えません');
+    $('storage-note').textContent = (store.usingIndexedDb() ? 'IndexedDB' : 'localStorage') +
+      (speech.supported ? '' : ' · no speech on this device');
   }
 
   function renderVoiceFields() {
@@ -1069,13 +1097,13 @@
       var list = speech.voicesFor(library.langInfo(code).speech);
       if (!list.length) return;
       var label = el('label', 'field row');
-      label.appendChild(el('span', null, library.langInfo(code).name + 'の声'));
+      label.appendChild(el('span', null, library.langInfo(code).name));
       var sel = el('select');
-      var auto = el('option', null, '自動');
+      var auto = el('option', null, 'Auto');
       auto.value = '';
       sel.appendChild(auto);
       list.forEach(function (v) {
-        var o = el('option', null, v.name + '（' + v.lang + '）');
+        var o = el('option', null, v.name + ' · ' + v.lang);
         o.value = v.voiceURI;
         sel.appendChild(o);
       });
@@ -1105,6 +1133,7 @@
       });
     });
     $('set-order').addEventListener('change', function (e) { settings.order = e.target.value; saveSettings(); });
+    $('set-mode').addEventListener('change', function (e) { settings.mode = e.target.value; saveSettings(); });
     $('set-direction').addEventListener('change', function (e) { settings.direction = e.target.value; saveSettings(); });
     $('set-show-example-ja').addEventListener('change', function (e) { settings.showExampleJa = e.target.checked; saveSettings(); });
     $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
@@ -1119,13 +1148,23 @@
     $('set-auto-flip').addEventListener('change', function (e) { settings.autoFlip = e.target.checked; saveSettings(); });
     $('set-flip-delay').addEventListener('input', function (e) {
       settings.flipDelay = Number(e.target.value);
-      $('flip-delay-out').textContent = settings.flipDelay.toFixed(1) + ' 秒';
+      $('flip-delay-out').textContent = settings.flipDelay.toFixed(1) + 's';
       saveSettings();
     });
     $('set-auto-next').addEventListener('change', function (e) { settings.autoNext = e.target.checked; saveSettings(); });
     $('set-next-delay').addEventListener('input', function (e) {
       settings.nextDelay = Number(e.target.value);
-      $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + ' 秒';
+      $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + 's';
+      saveSettings();
+    });
+    $('set-quick-flip').addEventListener('input', function (e) {
+      settings.quickFlipDelay = Number(e.target.value);
+      $('quick-flip-out').textContent = settings.quickFlipDelay.toFixed(1) + 's';
+      saveSettings();
+    });
+    $('set-quick-next').addEventListener('input', function (e) {
+      settings.quickNextDelay = Number(e.target.value);
+      $('quick-next-out').textContent = settings.quickNextDelay.toFixed(1) + 's';
       saveSettings();
     });
 
@@ -1152,10 +1191,10 @@
           }).then(function () {
             renderHome();
             renderSettings();
-            toast('読み込みました');
+            toast('Restored');
           });
         } catch (err) {
-          toast('読み込めませんでした');
+          toast('Could not read the backup');
         }
       };
       reader.readAsText(file, 'utf-8');
@@ -1163,10 +1202,10 @@
     $('btn-coach-again').addEventListener('click', function () {
       settings.coachSeen = false;
       saveSettings();
-      toast('次の学習で操作の説明を表示します');
+      toast('Gestures will show next time');
     });
     $('btn-wipe').addEventListener('click', function () {
-      if (!confirm('取り込んだリストも進み具合も、すべて消します。よろしいですか？')) return;
+      if (!confirm('Erase all lists and progress?')) return;
       store.keys().then(function (keys) {
         return Promise.all(keys.map(function (k) { return store.del(k); }));
       }).then(function () { location.reload(); });
@@ -1216,7 +1255,7 @@
       })
       .catch(function (e) {
         console.error(e);
-        toast('起動に失敗しました: ' + e.message);
+        toast('Could not start: ' + e.message);
         render('home');
       });
 
