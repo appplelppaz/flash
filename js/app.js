@@ -35,7 +35,6 @@
     order: 'listed',
     mode: 'full',
     direction: 'example-first',
-    showExampleJa: false,
     highlightLinks: true,
     tts: true,
     ttsPlan: 'full',
@@ -733,13 +732,13 @@
 
     // 語の途中で折り返さない指定にしてあるので、入りきらない語は行からはみ出す。
     // 高さだけでなく、行ごとの横のはみ出しも見て大きさを決める
+    var lines = inner.querySelectorAll('.line');
     var fitsNow = function () {
       if (inner.scrollHeight > availH) return false;
       if (inner.scrollWidth > availW + 1) return false;
-      for (var k = 0; k < inner.children.length; k++) {
-        var row = inner.children[k];
-        if (!row.getClientRects().length) continue;
-        if (row.scrollWidth > row.clientWidth + 1) return false;
+      for (var k = 0; k < lines.length; k++) {
+        if (!lines[k].getClientRects().length) continue;
+        if (lines[k].scrollWidth > lines[k].clientWidth + 1) return false;
       }
       return true;
     };
@@ -787,8 +786,9 @@
    * その段階で、どの行をどう見せるか。
    *
    * 単語は一度出たら、そのあとずっと同じ大きさ・同じ場所にとどまる。
-   * 訳は読み（ピンイン）と同じ小さい行として単語の下に出す。単語が縮んだり
-   * 動いたりすると目で追えず、覚えにくいため。
+   * 単語が縮んだり動いたりすると目で追えず、覚えにくいため。
+   * 訳は単語のすぐ下の枠（.slot）に出る。例文つきモードでは読み（ピンイン）と
+   * 同じ場所に重ねて、訳が出たら読みと入れ替える。単語だけモードでは読みの下に置く。
    * まだ出していない行も、単語が出たあとは場所だけ取っておく（.hold）。
    *
    * @param {number} i いま見せる段階
@@ -816,16 +816,18 @@
         later);
     });
 
-    // 読み（ピンインなど）は単語と一緒に出す
-    mark($('line-reading'), !!c.reading && held, false, false);
-
-    // 例文の訳。例文から始める並びでは、単語が出るまで伏せる（答えが先に見えてしまう）
-    var exAt = stages.indexOf('example');
-    var ejWanted = settings.showExampleJa && !!c.exampleJa && exAt !== -1;
-    var ejReady = ejWanted && exAt <= i && (settings.direction !== 'example-first' || i > 0);
-    mark($('line-example-ja'), ejReady || (ejWanted && held), false, !ejReady);
+    // 読み（ピンインなど）は単語と一緒に出す。例文つきモードでは、訳が出たら
+    // その場所を訳にゆずる。場所は取ったままにして、単語が動かないようにする
+    var overlap = plan.showsExample(planOpts());
+    var meaningAt = stages.indexOf('meaning');
+    var meaningOut = meaningAt !== -1 && meaningAt <= i;
+    var readingIn = !!c.reading && held;
+    mark($('line-reading'), readingIn, false, overlap && meaningOut);
+    $('line-slot').classList.toggle('on',
+      readingIn || (meaningAt !== -1 && (meaningOut || held)));
 
     // 例文の中で見つけた他の語は、最後まで進んだところで意味を添える
+    var exAt = stages.indexOf('example');
     var linkNode = $('line-links');
     var linkWanted = plan.showsExample(planOpts()) && settings.highlightLinks &&
       !!(st.links && st.links.length);
@@ -849,7 +851,6 @@
     $('line-term').textContent = c.term;
     $('line-reading').textContent = c.reading || '';
     $('line-meaning').textContent = c.meaning;
-    $('line-example-ja').textContent = c.exampleJa || '';
     if (fresh) st.links = linksFor(cur.id, c);
     paintExample(c, st.links);
     // 場所を取っておくために、出す前から中身は描いておく
@@ -1161,7 +1162,6 @@
     $('set-order').value = settings.order;
     $('set-mode').value = settings.mode;
     $('set-direction').value = settings.direction;
-    $('set-show-example-ja').checked = settings.showExampleJa;
     $('set-links').checked = settings.highlightLinks;
     $('set-tts').checked = settings.tts;
     $('set-tts-plan').value = settings.ttsPlan;
@@ -1232,7 +1232,6 @@
     $('set-order').addEventListener('change', function (e) { settings.order = e.target.value; saveSettings(); });
     $('set-mode').addEventListener('change', function (e) { settings.mode = e.target.value; saveSettings(); });
     $('set-direction').addEventListener('change', function (e) { settings.direction = e.target.value; saveSettings(); });
-    $('set-show-example-ja').addEventListener('change', function (e) { settings.showExampleJa = e.target.checked; saveSettings(); });
     $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
     $('set-tts').addEventListener('change', function (e) { settings.tts = e.target.checked; saveSettings(); updateSoundIcon(); });
     $('set-tts-plan').addEventListener('change', function (e) { settings.ttsPlan = e.target.value; saveSettings(); });

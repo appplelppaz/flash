@@ -216,10 +216,11 @@
     <article class="card" id="card" tabindex="0" aria-live="polite">
       <div class="card-inner">
         <div class="line term" id="line-term"></div>
-        <div class="line reading" id="line-reading"></div>
-        <div class="line meaning" id="line-meaning"></div>
+        <div class="slot" id="line-slot">
+          <div class="line reading" id="line-reading"></div>
+          <div class="line meaning" id="line-meaning"></div>
+        </div>
         <div class="line example" id="line-example"></div>
-        <div class="line example-ja" id="line-example-ja"></div>
         <div class="line links" id="line-links"></div>
       </div>
       <div class="paused-mark" id="paused-mark"><svg><use href="#i-play"/></svg></div>
@@ -307,11 +308,6 @@
         <option value="1">1×</option>
         <option value="2">2×</option>
       </select>
-    </label>
-    <label class="switch">
-      <span>Show example translation</span>
-      <input type="checkbox" id="set-show-example-ja">
-      <i></i>
     </label>
     <label class="switch">
       <span>Show extra words</span>
