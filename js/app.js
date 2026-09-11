@@ -35,7 +35,6 @@
     order: 'listed',
     mode: 'full',
     direction: 'example-first',
-    showExampleJa: false,
     highlightLinks: true,
     tts: true,
     ttsPlan: 'full',
@@ -695,6 +694,9 @@
    * 画面の縦横は端末と持ち方で変わるうえ、語の長さも例文の長さもまちまちなので、
    * CSS の決め打ちでは「短い語なのに小さい」「長い例文がはみ出す」が避けられない。
    * ここでは入る大きさを実際に測って二分探索で決める。
+   *
+   * 大きさは 1 枚のカードで 1 つ。段階ごとに測り直すと、行が増えたときに
+   * 単語まで縮んでしまう。どの段階でも入る大きさを選ぶ。
    */
   var FIT_MIN = 14;
   var FIT_MAX = 150;
@@ -715,24 +717,37 @@
     );
     if (availH < 40 || availW < 40) return;
 
+    var c = currentCard();
+    if (!c || !st.stages.length) return;
+
     var hi = Math.max(FIT_MIN + 1, Math.min(FIT_MAX, availH * 0.62));
     var lo = FIT_MIN;
     var best = FIT_MIN;
 
+    // 単語が出たあとの段階は、先の行の場所も取ってあるので中身の高さは同じ。
+    // 測るのは単語が出るまでの段階と、単語が出た段階の 2 通りで足りる
+    var termAt = st.stages.indexOf('term');
+    var probes = [];
+    for (var p = 0; p <= (termAt === -1 ? st.stages.length - 1 : termAt); p++) probes.push(p);
+
     // 語の途中で折り返さない指定にしてあるので、入りきらない語は行からはみ出す。
     // 高さだけでなく、行ごとの横のはみ出しも見て大きさを決める
-    var rows = [];
-    for (var k = 0; k < inner.children.length; k++) {
-      var row = inner.children[k];
-      if (row.offsetParent !== null || row.getClientRects().length) rows.push(row);
-    }
+    var lines = inner.querySelectorAll('.line');
+    var fitsNow = function () {
+      if (inner.scrollHeight > availH) return false;
+      if (inner.scrollWidth > availW + 1) return false;
+      for (var k = 0; k < lines.length; k++) {
+        if (!lines[k].getClientRects().length) continue;
+        if (lines[k].scrollWidth > lines[k].clientWidth + 1) return false;
+      }
+      return true;
+    };
 
     var fits = function (size) {
       card.style.setProperty('--lead', size.toFixed(1) + 'px');
-      if (inner.scrollHeight > availH) return false;
-      if (inner.scrollWidth > availW + 1) return false;
-      for (var j = 0; j < rows.length; j++) {
-        if (rows[j].scrollWidth > rows[j].clientWidth + 1) return false;
+      for (var j = 0; j < probes.length; j++) {
+        paintStage(probes[j], c);
+        if (!fitsNow()) return false;
       }
       return true;
     };
@@ -750,6 +765,9 @@
 
     // いちばん小さくしても入らないほど長い語は、割ってでも見せる
     if (!fits(best)) card.classList.add('allow-break');
+
+    // 測るあいだに動かした行を、いまの段階に戻す
+    paintStage(st.stage, c);
   }
 
   /** 「この例文でついでに覚える語」の行 */
@@ -762,6 +780,60 @@
       item.appendChild(document.createTextNode(h.meaning || ''));
       node.appendChild(item);
     });
+  }
+
+  /**
+   * その段階で、どの行をどう見せるか。
+   *
+   * 単語は一度出たら、そのあとずっと同じ大きさ・同じ場所にとどまる。
+   * 単語が縮んだり動いたりすると目で追えず、覚えにくいため。
+   * 訳は単語のすぐ下の枠（.slot）に出る。例文つきモードでは読み（ピンイン）と
+   * 同じ場所に重ねて、訳が出たら読みと入れ替える。単語だけモードでは読みの下に置く。
+   * まだ出していない行も、単語が出たあとは場所だけ取っておく（.hold）。
+   *
+   * @param {number} i いま見せる段階
+   * @param {Object} c カード
+   */
+  function paintStage(i, c) {
+    var stages = st.stages;
+    var termAt = stages.indexOf('term');
+    // 単語が出たあとは、行が増えても単語が動かないように場所を取る
+    var held = termAt !== -1 && i >= termAt;
+
+    var mark = function (node, show, lead, hold) {
+      node.classList.remove('is-lead', 'is-sub', 'hold');
+      if (!show) return;
+      node.classList.add(lead ? 'is-lead' : 'is-sub');
+      if (hold) node.classList.add('hold');
+    };
+
+    ['term', 'meaning', 'example'].forEach(function (role) {
+      var at = stages.indexOf(role);
+      var later = at > i;
+      mark($('line-' + role),
+        at !== -1 && (!later || held),
+        held ? role === 'term' : at === i,
+        later);
+    });
+
+    // 読み（ピンインなど）は単語と一緒に出す。例文つきモードでは、訳が出たら
+    // その場所を訳にゆずる。場所は取ったままにして、単語が動かないようにする
+    var overlap = plan.showsExample(planOpts());
+    var meaningAt = stages.indexOf('meaning');
+    var meaningOut = meaningAt !== -1 && meaningAt <= i;
+    var readingIn = !!c.reading && held;
+    mark($('line-reading'), readingIn, false, overlap && meaningOut);
+    $('line-slot').classList.toggle('on',
+      readingIn || (meaningAt !== -1 && (meaningOut || held)));
+
+    // 例文の中で見つけた他の語は、最後まで進んだところで意味を添える
+    var exAt = stages.indexOf('example');
+    var linkNode = $('line-links');
+    var linkWanted = plan.showsExample(planOpts()) && settings.highlightLinks &&
+      !!(st.links && st.links.length);
+    var linkReady = linkWanted && exAt !== -1 && exAt <= i && i === stages.length - 1;
+    linkNode.classList.toggle('show', linkReady || (linkWanted && held));
+    linkNode.classList.toggle('hold', !linkReady);
   }
 
   function renderCard(fresh) {
@@ -779,36 +851,13 @@
     $('line-term').textContent = c.term;
     $('line-reading').textContent = c.reading || '';
     $('line-meaning').textContent = c.meaning;
-    $('line-example-ja').textContent = c.exampleJa || '';
     if (fresh) st.links = linksFor(cur.id, c);
     paintExample(c, st.links);
+    // 場所を取っておくために、出す前から中身は描いておく
+    if (st.links && st.links.length) paintLinkNotes(st.links);
+    else $('line-links').textContent = '';
 
-    var shown = st.stages.slice(0, st.stage + 1);
-    ['term', 'meaning', 'example'].forEach(function (role) {
-      var node = $('line-' + role);
-      node.classList.remove('is-lead', 'is-sub');
-      var at = shown.indexOf(role);
-      if (at === -1) return;
-      node.classList.add(at === st.stage ? 'is-lead' : 'is-sub');
-    });
-    var readingNode = $('line-reading');
-    readingNode.classList.remove('is-lead', 'is-sub');
-    if (c.reading && shown.indexOf('term') !== -1 && st.stages[st.stage] === 'term') readingNode.classList.add('is-sub');
-
-    var ejNode = $('line-example-ja');
-    ejNode.classList.remove('is-lead', 'is-sub');
-    // 例文から始める並びでは、単語が出るまで例文の訳は伏せておく（答えが先に見えてしまうため）
-    var ejReady = shown.indexOf('example') !== -1 &&
-      (settings.direction !== 'example-first' || st.stage > 0);
-    if (settings.showExampleJa && c.exampleJa && ejReady) ejNode.classList.add('is-sub');
-
-    // 例文の中で見つけた他の単語は、訳まで進んだところで意味を添える
-    var linkNode = $('line-links');
-    var showLinks = plan.showsExample(planOpts()) && settings.highlightLinks &&
-      st.links && st.links.length &&
-      shown.indexOf('example') !== -1 && st.stage === st.stages.length - 1;
-    linkNode.classList.toggle('show', !!showLinks);
-    if (showLinks) paintLinkNotes(st.links);
+    paintStage(st.stage, c);
 
     // 点と進み具合
     // 点は「段階 × 周」。繰り返しているときは、いま何周目かも点で分かる
@@ -1113,7 +1162,6 @@
     $('set-order').value = settings.order;
     $('set-mode').value = settings.mode;
     $('set-direction').value = settings.direction;
-    $('set-show-example-ja').checked = settings.showExampleJa;
     $('set-links').checked = settings.highlightLinks;
     $('set-tts').checked = settings.tts;
     $('set-tts-plan').value = settings.ttsPlan;
@@ -1184,7 +1232,6 @@
     $('set-order').addEventListener('change', function (e) { settings.order = e.target.value; saveSettings(); });
     $('set-mode').addEventListener('change', function (e) { settings.mode = e.target.value; saveSettings(); });
     $('set-direction').addEventListener('change', function (e) { settings.direction = e.target.value; saveSettings(); });
-    $('set-show-example-ja').addEventListener('change', function (e) { settings.showExampleJa = e.target.checked; saveSettings(); });
     $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
     $('set-tts').addEventListener('change', function (e) { settings.tts = e.target.checked; saveSettings(); updateSoundIcon(); });
     $('set-tts-plan').addEventListener('change', function (e) { settings.ttsPlan = e.target.value; saveSettings(); });

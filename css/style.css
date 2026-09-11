@@ -581,6 +581,8 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .card.allow-break .line { overflow-wrap: anywhere; word-break: break-word; }
 .line.is-lead, .line.is-sub { display: block; }
 .line.is-sub { color: var(--muted); font-weight: 520; }
+/* まだ出さない行。場所だけ取って、あとから行が増えても単語が動かないようにする */
+.line.hold { visibility: hidden; }
 
 /*
   文字の大きさは JS が測って決める（fitCard）。
@@ -601,8 +603,22 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .line.example.is-lead { line-height: 1.42; }
 .line.example.is-sub { line-height: 1.45; }
 
-.line.reading { font-size: var(--tiny); color: var(--muted); margin-top: calc(var(--lead) * -.14); }
-.line.example-ja { font-size: var(--tiny); color: var(--muted); line-height: 1.55; }
+.line.reading { font-size: var(--tiny); color: var(--muted); }
+
+/*
+  単語のすぐ下の枠。例文つきモードでは、読み（ピンイン）と訳を同じ場所に重ね、
+  訳が出たら読みと入れ替える。枠の高さは両方のうち高いほうで決まるので、
+  入れ替わっても単語は動かない。
+  単語だけモードでは、読みの下に訳を置く（これまでどおり）。
+*/
+.slot { display: none; width: 100%; margin-top: calc(var(--lead) * -.14); }
+.slot.on { display: grid; }
+.slot.on > .line { grid-area: 1 / 1; }
+.card.quick .slot.on {
+  display: flex;
+  flex-direction: column;
+  gap: max(6px, calc(var(--lead) * .17));
+}
 
 /* 例文の中に出てくる、リストに無い語（おまけの語） */
 .line .link {
@@ -622,13 +638,10 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 
 /* 単語だけモード：例文まわりは何があっても出さない */
 .card.quick .line.example,
-.card.quick .line.example-ja,
 .card.quick .line.links { display: none !important; }
 
-/* 並び替え：「訳 → 単語」は訳を、「例文 → 単語」は例文を先に置く */
-.card.dir-mf .line.meaning { order: -1; }
+/* 並び替え：「例文 → 単語」は例文を先に置く */
 .card.dir-ef .line.example { order: -2; }
-.card.dir-ef .line.example-ja { order: -1; }
 .card.dir-ef .line.links { order: 1; }
 
 .paused-mark {
