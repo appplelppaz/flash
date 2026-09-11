@@ -676,7 +676,7 @@
    * CSS の決め打ちでは「短い語なのに小さい」「長い例文がはみ出す」が避けられない。
    * ここでは入る大きさを実際に測って二分探索で決める。
    */
-  var FIT_MIN = 18;
+  var FIT_MIN = 14;
   var FIT_MAX = 150;
 
   function fitCard() {
@@ -699,11 +699,25 @@
     var lo = FIT_MIN;
     var best = FIT_MIN;
 
+    // 語の途中で折り返さない指定にしてあるので、入りきらない語は行からはみ出す。
+    // 高さだけでなく、行ごとの横のはみ出しも見て大きさを決める
+    var rows = [];
+    for (var k = 0; k < inner.children.length; k++) {
+      var row = inner.children[k];
+      if (row.offsetParent !== null || row.getClientRects().length) rows.push(row);
+    }
+
     var fits = function (size) {
       card.style.setProperty('--lead', size.toFixed(1) + 'px');
-      return inner.scrollHeight <= availH && inner.scrollWidth <= availW + 1;
+      if (inner.scrollHeight > availH) return false;
+      if (inner.scrollWidth > availW + 1) return false;
+      for (var j = 0; j < rows.length; j++) {
+        if (rows[j].scrollWidth > rows[j].clientWidth + 1) return false;
+      }
+      return true;
     };
 
+    card.classList.remove('allow-break');
     if (fits(hi)) {
       best = hi;
     } else {
@@ -713,6 +727,9 @@
       }
     }
     card.style.setProperty('--lead', best.toFixed(1) + 'px');
+
+    // いちばん小さくしても入らないほど長い語は、割ってでも見せる
+    if (!fits(best)) card.classList.add('allow-break');
   }
 
   /** 「この例文でついでに覚える語」の行 */

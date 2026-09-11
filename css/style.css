@@ -563,7 +563,22 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
   text-align: center;
 }
 
-.line { display: none; width: 100%; word-break: break-word; overflow-wrap: anywhere; }
+/*
+  語の途中では折り返さない。1 つの語が 2 行に割れると、読む側は
+  それが 1 語なのか 2 語なのか一瞬迷う。入りきらないときは
+  fitCard() が文字を小さくして 1 行に収める。
+  それでも入らないほど長い語だけ、最後の手段として割る（.allow-break）。
+*/
+.line {
+  display: none;
+  width: 100%;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  /* 日本語は文字の間で折り返してよい。ただし 、。」 などが行頭に来ないようにする */
+  line-break: strict;
+}
+.card.allow-break .line { overflow-wrap: anywhere; word-break: break-word; }
 .line.is-lead, .line.is-sub { display: block; }
 .line.is-sub { color: var(--muted); font-weight: 520; }
 
@@ -823,9 +838,9 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
     inset: 0;
     padding:
       calc(var(--safe-t) + 30px)
-      calc(54px + var(--safe-r))
+      calc(62px + var(--safe-r))
       calc(20px + var(--safe-b))
-      calc(54px + var(--safe-l));
+      calc(62px + var(--safe-l));
   }
 
   /* 下のバーは枠だけにして、中身を端へ配る */
@@ -872,8 +887,8 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 /* 横画面で背が低いほど、左右の余白を詰めて文字の場所を広げる */
 @media (orientation: landscape) and (max-height: 420px) {
   .stage {
-    padding-left: calc(48px + var(--safe-l));
-    padding-right: calc(48px + var(--safe-r));
+    padding-left: calc(56px + var(--safe-l));
+    padding-right: calc(56px + var(--safe-r));
     padding-bottom: calc(16px + var(--safe-b));
   }
   .study-bottom .controls { gap: 10px; }
