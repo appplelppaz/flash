@@ -49,6 +49,7 @@
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.2 2"/></symbol>
   <symbol id="i-percent" viewBox="0 0 24 24"><path d="m18.5 5.5-13 13"/><circle cx="7.5" cy="7.5" r="2.2"/><circle cx="16.5" cy="16.5" r="2.2"/></symbol>
   <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4 11a8 8 0 0 1 13.3-5.9L20 7.5M20 3.5v4h-4"/><path d="M20 13a8 8 0 0 1-13.3 5.9L4 16.5M4 20.5v-4h4"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 3.5v4h-4"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.2 2.4 3.4 5.3 3.4 8.5S14.2 18.1 12 20.5c-2.2-2.4-3.4-5.3-3.4-8.5S9.8 5.9 12 3.5Z"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></symbol>
@@ -111,6 +112,14 @@
       </div>
     </div>
 
+    <div class="picker" id="repeat-row">
+      <svg class="picker-icon" aria-hidden="true"><use href="#i-repeat"/></svg>
+      <div class="segmented" id="repeat-picker" role="group" aria-label="Repeat">
+        <button data-repeat="1" class="on" aria-label="Read once">1×</button>
+        <button data-repeat="2" aria-label="Read twice">2×</button>
+      </div>
+    </div>
+
     <div class="picker" id="size-row">
       <svg class="picker-icon" aria-hidden="true"><use href="#i-stack"/></svg>
       <div class="segmented" id="size-presets" role="group" aria-label="Words per set">
@@ -123,7 +132,7 @@
     </div>
 
     <div class="row-actions">
-      <button class="ghost" id="btn-deck-reset" aria-label="Reset progress" title="Reset progress"><svg><use href="#i-repeat"/></svg></button>
+      <button class="ghost" id="btn-deck-reset" aria-label="Reset progress" title="Reset progress"><svg><use href="#i-rotate"/></svg></button>
       <button class="ghost danger" id="btn-deck-delete" aria-label="Delete list" title="Delete list"><svg><use href="#i-trash"/></svg></button>
     </div>
   </div>
@@ -316,6 +325,13 @@
         <option value="short">Skip example JA</option>
         <option value="target">Target only</option>
         <option value="word">Word only</option>
+      </select>
+    </label>
+    <label class="field row">
+      <span>Repeat</span>
+      <select id="set-repeat">
+        <option value="1">1×</option>
+        <option value="2">2×</option>
       </select>
     </label>
     <label class="field row">

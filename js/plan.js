@@ -6,6 +6,7 @@
  *   quick  例文は表示も読み上げもしない。単語 → 訳 だけをテンポよく回す。
  *
  * 並び（direction）と読み上げの範囲（ttsPlan）は、どちらのモードでも効く。
+ * repeat を 2 にすると、読み上げるものを 1 つずつ 2 回続けて言う（覚えるための繰り返し）。
  */
 (function (global) {
   'use strict';
@@ -39,34 +40,54 @@
     return pair.concat(['example']);
   }
 
+  /** 1 つずつ続けて言う回数（1〜3） */
+  function timesFor(opts) {
+    var n = Math.round(Number((opts || {}).repeat) || 1);
+    return Math.max(1, Math.min(3, n));
+  }
+
+  /** [a, b] を 2 回ずつにすると [a, a, b, b]。まとめて 2 周ではなく、その場で繰り返す */
+  function repeatEach(steps, times) {
+    if (times <= 1) return steps;
+    var out = [];
+    steps.forEach(function (s) {
+      for (var i = 0; i < times; i++) out.push(s);
+    });
+    return out;
+  }
+
   /**
    * その段階で読み上げる内容。
    * @param {Object} card
    * @param {string} role  'term' | 'meaning' | 'example'
-   * @param {Object} opts {mode, direction, ttsPlan, lang, ja}
+   * @param {Object} opts {mode, direction, ttsPlan, repeat, lang, ja}
    * @returns {Array<{t:string, l:string}>}
    */
   function speech(card, role, opts) {
     var o = opts || {};
     if (!card) return [];
     var parts = partsFor(o.ttsPlan);
+    var times = timesFor(o);
     var steps = [];
 
     if (role === 'term') {
       if (parts.term && card.term) steps.push({ t: card.term, l: o.lang });
-      return steps;
+      return repeatEach(steps, times);
     }
     if (role === 'meaning') {
       if (parts.meaning && card.meaning) steps.push({ t: card.meaning, l: o.ja });
-      return steps;
+      return repeatEach(steps, times);
     }
     // 単語だけモードでは例文まで進まないが、念のため読み上げない
     if (role !== 'example' || o.mode === 'quick' || !card.example) return steps;
 
     if (parts.example) steps.push({ t: card.example, l: o.lang });
     if (parts.exampleJa && card.exampleJa) steps.push({ t: card.exampleJa, l: o.ja });
-    // 単語から始める並びでは、訳を聞いたあとにもう一度例文を聞いて締める
-    if (o.direction !== 'example-first' && parts.example && parts.exampleJa && card.exampleJa) {
+    steps = repeatEach(steps, times);
+    // 単語から始める並びでは、訳を聞いたあとにもう一度例文を聞いて締める。
+    // 繰り返しを付けているときは既に 2 回言っているので、締めは足さない
+    if (times === 1 && o.direction !== 'example-first' &&
+        parts.example && parts.exampleJa && card.exampleJa) {
       steps.push({ t: card.example, l: o.lang });
     }
     return steps;

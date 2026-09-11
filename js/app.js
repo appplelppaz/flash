@@ -39,6 +39,7 @@
     highlightLinks: true,
     tts: true,
     ttsPlan: 'full',
+    repeat: 1,
     rate: 1,
     voices: {},
     autoFlip: true,
@@ -69,6 +70,7 @@
       s.nextDelay = Math.max(s.delay, 1.5);
     }
     if (s.mode !== 'full' && s.mode !== 'quick') s.mode = 'full';
+    if (s.repeat !== 1 && s.repeat !== 2) s.repeat = 1;
     var sizes = [10, 20, 30, 50, 100];
     if (sizes.indexOf(s.setSize) === -1) {
       s.setSize = sizes.reduce(function (best, n) {
@@ -262,6 +264,9 @@
     document.querySelectorAll('#order-picker button').forEach(function (b) {
       b.classList.toggle('on', b.dataset.order === settings.order);
     });
+    document.querySelectorAll('#repeat-picker button').forEach(function (b) {
+      b.classList.toggle('on', Number(b.dataset.repeat) === settings.repeat);
+    });
     document.querySelectorAll('#size-presets button').forEach(function (b) {
       b.classList.toggle('on', Number(b.dataset.size) === settings.setSize);
     });
@@ -290,6 +295,13 @@
     document.querySelectorAll('#order-picker button').forEach(function (b) {
       b.addEventListener('click', function () {
         settings.order = b.dataset.order;
+        saveSettings();
+        renderDeck();
+      });
+    });
+    document.querySelectorAll('#repeat-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.repeat = Number(b.dataset.repeat);
         saveSettings();
         renderDeck();
       });
@@ -573,6 +585,7 @@
       mode: settings.mode,
       direction: settings.direction,
       ttsPlan: settings.ttsPlan,
+      repeat: settings.repeat,
       lang: deck ? library.langInfo(deck.meta.lang).speech : 'en-US',
       ja: library.langInfo('ja').speech
     };
@@ -1086,6 +1099,7 @@
     $('set-links').checked = settings.highlightLinks;
     $('set-tts').checked = settings.tts;
     $('set-tts-plan').value = settings.ttsPlan;
+    $('set-repeat').value = String(settings.repeat);
     $('set-rate').value = settings.rate;
     $('rate-out').textContent = Number(settings.rate).toFixed(2).replace(/0$/, '');
     $('set-auto-flip').checked = settings.autoFlip;
@@ -1156,6 +1170,7 @@
     $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
     $('set-tts').addEventListener('change', function (e) { settings.tts = e.target.checked; saveSettings(); updateSoundIcon(); });
     $('set-tts-plan').addEventListener('change', function (e) { settings.ttsPlan = e.target.value; saveSettings(); });
+    $('set-repeat').addEventListener('change', function (e) { settings.repeat = Number(e.target.value); saveSettings(); });
     $('set-rate').addEventListener('input', function (e) {
       settings.rate = Number(e.target.value);
       speech.setRate(settings.rate);
