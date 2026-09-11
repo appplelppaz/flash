@@ -7,7 +7,7 @@
 
   var F = global.Flash;
   var store = F.store, library = F.library, speech = F.speech, gesture = F.gesture;
-  var Session = F.session, tsv = F.tsv, links = F.links;
+  var Session = F.session, tsv = F.tsv, links = F.links, plan = F.plan;
 
   var $ = function (id) { return document.getElementById(id); };
   var el = function (tag, cls, text) {
@@ -23,6 +23,7 @@
     theme: 'auto',
     setSize: 20,
     order: 'listed',
+    mode: 'full',
     direction: 'example-first',
     showExampleJa: false,
     highlightLinks: true,
@@ -34,6 +35,8 @@
     flipDelay: 1,
     autoNext: true,
     nextDelay: 1.5,
+    quickFlipDelay: 0.5,
+    quickNextDelay: 0.8,
     coachSeen: false,
     scope: 'new'
   };
@@ -55,6 +58,7 @@
       s.flipDelay = s.delay;
       s.nextDelay = Math.max(s.delay, 1.5);
     }
+    if (s.mode !== 'full' && s.mode !== 'quick') s.mode = 'full';
     delete s.auto;
     delete s.delay;
     return s;
@@ -228,6 +232,15 @@
     document.querySelectorAll('#scope-picker button').forEach(function (b) {
       b.classList.toggle('on', b.dataset.scope === settings.scope);
     });
+    document.querySelectorAll('#mode-picker button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.mode === settings.mode);
+    });
+    document.querySelectorAll('#order-picker button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.order === settings.order);
+    });
+    $('mode-note').textContent = settings.mode === 'quick'
+      ? '例文は出さず、単語と訳だけを短い間隔で回します。'
+      : '例文 → 単語 → 訳 の順に見せます（順番は設定で変えられます）。';
     $('size-value').textContent = settings.setSize;
     document.querySelectorAll('#size-presets button').forEach(function (b) {
       b.classList.toggle('on', Number(b.dataset.size) === settings.setSize);
@@ -244,6 +257,20 @@
     document.querySelectorAll('#scope-picker button').forEach(function (b) {
       b.addEventListener('click', function () {
         settings.scope = b.dataset.scope;
+        saveSettings();
+        renderDeck();
+      });
+    });
+    document.querySelectorAll('#mode-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.mode = b.dataset.mode;
+        saveSettings();
+        renderDeck();
+      });
+    });
+    document.querySelectorAll('#order-picker button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        settings.order = b.dataset.order;
         saveSettings();
         renderDeck();
       });
@@ -527,17 +554,19 @@
     wakeLock: null
   };
 
-  /**
-   * カードを何の順で見せるか。
-   *   example-first  例文 → 単語 → 訳（既定。例文から意味を推し量って覚える）
-   *   term-first     単語 → 訳 → 例文
-   *   meaning-first  訳 → 単語 → 例文
-   */
+  /** いまの設定を plan に渡す形にする */
+  function planOpts() {
+    return {
+      mode: settings.mode,
+      direction: settings.direction,
+      ttsPlan: settings.ttsPlan,
+      lang: deck ? library.langInfo(deck.meta.lang).speech : 'en-US',
+      ja: library.langInfo('ja').speech
+    };
+  }
+
   function stagesFor(card) {
-    if (settings.direction === 'example-first' && card.example) return ['example', 'term', 'meaning'];
-    var base = settings.direction === 'meaning-first' ? ['meaning', 'term'] : ['term', 'meaning'];
-    if (card.example) base.push('example');
-    return base;
+    return plan.stages(card, planOpts());
   }
 
   function startStudy() {
@@ -559,8 +588,10 @@
     markStudiedToday();
     requestWakeLock();
     show('study');
+    var quick = settings.mode === 'quick';
     $('card').classList.toggle('dir-mf', settings.direction === 'meaning-first');
-    $('card').classList.toggle('dir-ef', settings.direction === 'example-first');
+    $('card').classList.toggle('dir-ef', !quick && settings.direction === 'example-first');
+    $('card').classList.toggle('quick', quick);
     if (!settings.coachSeen) {
       $('coach').hidden = false;
     } else {
@@ -604,6 +635,7 @@
    * この文のついでに覚えてしまいたい語（TSV の 5 列目）。
    */
   function linksFor(id, card) {
+    if (!plan.showsExample(planOpts())) return [];
     if (!settings.highlightLinks || !card.example || !card.extras || !card.extras.length) return [];
     return links.findExtras(card.example, card.extras, deck.meta.lang);
   }
@@ -720,7 +752,8 @@
 
     // 例文の中で見つけた他の単語は、訳まで進んだところで意味を添える
     var linkNode = $('line-links');
-    var showLinks = settings.highlightLinks && st.links && st.links.length &&
+    var showLinks = plan.showsExample(planOpts()) && settings.highlightLinks &&
+      st.links && st.links.length &&
       shown.indexOf('example') !== -1 && st.stage === st.stages.length - 1;
     linkNode.classList.toggle('show', !!showLinks);
     if (showLinks) paintLinkNotes(st.links);
@@ -748,40 +781,12 @@
     if (!st.paused && $('coach').hidden) playStage();
   }
 
-  /** 読み上げの範囲。plan ごとに、どれを声に出すか */
-  var PLAN_PARTS = {
-    full:   { example: true,  exampleJa: true,  term: true,  meaning: true },
-    short:  { example: true,  exampleJa: false, term: true,  meaning: true },
-    target: { example: true,  exampleJa: false, term: true,  meaning: false },
-    word:   { example: false, exampleJa: false, term: true,  meaning: false }
-  };
-
-  /**
-   * いまの段階で読み上げる内容。
-   * 例文から始める並びでは 例文 → 例文の訳 → 単語 → 訳 の順に声が出る。
-   */
+  /** いまの段階で読み上げる内容 */
   function speechSteps() {
+    if (!settings.tts) return [];
     var c = currentCard();
-    if (!c || !settings.tts) return [];
-    var lang = library.langInfo(deck.meta.lang).speech;
-    var ja = library.langInfo('ja').speech;
-    var parts = PLAN_PARTS[settings.ttsPlan] || PLAN_PARTS.full;
-    var role = st.stages[st.stage];
-    var steps = [];
-
-    if (role === 'term') {
-      if (parts.term && c.term) steps.push({ t: c.term, l: lang });
-    } else if (role === 'meaning') {
-      if (parts.meaning && c.meaning) steps.push({ t: c.meaning, l: ja });
-    } else if (role === 'example' && c.example) {
-      if (parts.example) steps.push({ t: c.example, l: lang });
-      if (parts.exampleJa && c.exampleJa) steps.push({ t: c.exampleJa, l: ja });
-      // 単語から始める並びでは、訳を聞いたあとにもう一度例文を聞いて締める
-      if (settings.direction !== 'example-first' && parts.example && parts.exampleJa && c.exampleJa) {
-        steps.push({ t: c.example, l: lang });
-      }
-    }
-    return steps;
+    if (!c) return [];
+    return plan.speech(c, st.stages[st.stage], planOpts());
   }
 
   function playStage() {
@@ -806,7 +811,11 @@
     var last = st.stage >= st.stages.length - 1;
     // 最後の段階なら「自動送り（次の単語へ）」、途中なら「自動めくり」
     if (last ? !settings.autoNext : !settings.autoFlip) return;
-    var ms = Math.max(300, (last ? settings.nextDelay : settings.flipDelay) * 1000);
+    var quick = settings.mode === 'quick';
+    var delay = last
+      ? (quick ? settings.quickNextDelay : settings.nextDelay)
+      : (quick ? settings.quickFlipDelay : settings.flipDelay);
+    var ms = Math.max(250, delay * 1000);
     var f = $('timer-fill');
     f.style.transition = 'none';
     f.style.width = '0%';
@@ -1040,6 +1049,7 @@
       b.classList.toggle('on', b.dataset.theme === settings.theme);
     });
     $('set-order').value = settings.order;
+    $('set-mode').value = settings.mode;
     $('set-direction').value = settings.direction;
     $('set-show-example-ja').checked = settings.showExampleJa;
     $('set-links').checked = settings.highlightLinks;
@@ -1053,6 +1063,10 @@
     $('set-auto-next').checked = settings.autoNext;
     $('set-next-delay').value = settings.nextDelay;
     $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + ' 秒';
+    $('set-quick-flip').value = settings.quickFlipDelay;
+    $('quick-flip-out').textContent = settings.quickFlipDelay.toFixed(1) + ' 秒';
+    $('set-quick-next').value = settings.quickNextDelay;
+    $('quick-next-out').textContent = settings.quickNextDelay.toFixed(1) + ' 秒';
     renderVoiceFields();
     $('storage-note').textContent = '保存先: ' + (store.usingIndexedDb() ? 'IndexedDB' : 'localStorage') +
       (speech.supported ? '' : ' · この端末では読み上げが使えません');
@@ -1105,6 +1119,7 @@
       });
     });
     $('set-order').addEventListener('change', function (e) { settings.order = e.target.value; saveSettings(); });
+    $('set-mode').addEventListener('change', function (e) { settings.mode = e.target.value; saveSettings(); });
     $('set-direction').addEventListener('change', function (e) { settings.direction = e.target.value; saveSettings(); });
     $('set-show-example-ja').addEventListener('change', function (e) { settings.showExampleJa = e.target.checked; saveSettings(); });
     $('set-links').addEventListener('change', function (e) { settings.highlightLinks = e.target.checked; saveSettings(); });
@@ -1126,6 +1141,16 @@
     $('set-next-delay').addEventListener('input', function (e) {
       settings.nextDelay = Number(e.target.value);
       $('next-delay-out').textContent = settings.nextDelay.toFixed(1) + ' 秒';
+      saveSettings();
+    });
+    $('set-quick-flip').addEventListener('input', function (e) {
+      settings.quickFlipDelay = Number(e.target.value);
+      $('quick-flip-out').textContent = settings.quickFlipDelay.toFixed(1) + ' 秒';
+      saveSettings();
+    });
+    $('set-quick-next').addEventListener('input', function (e) {
+      settings.quickNextDelay = Number(e.target.value);
+      $('quick-next-out').textContent = settings.quickNextDelay.toFixed(1) + ' 秒';
       saveSettings();
     });
 

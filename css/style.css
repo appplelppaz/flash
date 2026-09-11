@@ -291,6 +291,13 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .segmented button.on { background: var(--surface-2); color: var(--text); }
 .segmented.small button { font-size: 12px; padding: 7px 4px; }
 
+.picker-note {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
 .stepper {
   display: flex;
   align-items: center;
@@ -573,6 +580,11 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .line.links.show { display: block; }
 .line.links b { color: var(--accent); font-weight: 620; margin-right: .4em; }
 .line.links span { display: inline-block; margin: 0 .6em; }
+
+/* 単語だけモード：例文まわりは何があっても出さない */
+.card.quick .line.example,
+.card.quick .line.example-ja,
+.card.quick .line.links { display: none !important; }
 
 /* 並び替え：「訳 → 単語」は訳を、「例文 → 単語」は例文を先に置く */
 .card.dir-mf .line.meaning { order: -1; }

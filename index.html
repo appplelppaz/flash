@@ -67,6 +67,20 @@
       <div class="deck-nums" id="deck-nums"></div>
     </div>
 
+    <h2 class="section-label">学習のしかた</h2>
+    <div class="segmented" id="mode-picker">
+      <button data-mode="full" class="on">例文つき</button>
+      <button data-mode="quick">単語だけ</button>
+    </div>
+    <p class="picker-note" id="mode-note"></p>
+
+    <h2 class="section-label">出す順番</h2>
+    <div class="segmented" id="order-picker">
+      <button data-order="listed" class="on">リスト順</button>
+      <button data-order="random">ランダム</button>
+      <button data-order="weak-first">苦手を先に</button>
+    </div>
+
     <h2 class="section-label">出題する範囲</h2>
     <div class="segmented" id="scope-picker">
       <button data-scope="new" class="on">未学習</button>
@@ -243,11 +257,18 @@
 
     <h2 class="section-label">出題</h2>
     <label class="field row">
-      <span>出題の順番</span>
+      <span>出す順番</span>
       <select id="set-order">
         <option value="listed">リストの順</option>
         <option value="random">ランダム</option>
         <option value="weak-first">苦手を先に</option>
+      </select>
+    </label>
+    <label class="field row">
+      <span>学習のしかた</span>
+      <select id="set-mode">
+        <option value="full">例文つき</option>
+        <option value="quick">単語だけ（テンポよく）</option>
       </select>
     </label>
     <label class="field row">
@@ -309,6 +330,15 @@
       <span>送るまで <output id="next-delay-out">1.5 秒</output></span>
       <input type="range" id="set-next-delay" min="0.5" max="10" step="0.5" value="1.5">
     </label>
+    <h2 class="section-label">単語だけモードの間隔</h2>
+    <label class="field row">
+      <span>めくるまで <output id="quick-flip-out">0.5 秒</output></span>
+      <input type="range" id="set-quick-flip" min="0.3" max="5" step="0.1" value="0.5">
+    </label>
+    <label class="field row">
+      <span>送るまで <output id="quick-next-out">0.8 秒</output></span>
+      <input type="range" id="set-quick-next" min="0.3" max="5" step="0.1" value="0.8">
+    </label>
 
     <h2 class="section-label">データ</h2>
     <div class="row-actions column">
@@ -332,6 +362,7 @@
 <script src="js/library.js"></script>
 <script src="js/speech.js"></script>
 <script src="js/links.js"></script>
+<script src="js/plan.js"></script>
 <script src="js/gesture.js"></script>
 <script src="js/app.js"></script>
 </body>
