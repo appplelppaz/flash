@@ -104,11 +104,11 @@
       var extras = parseExtras(cells[4] || '');
 
       if (!term) {
-        skipped.push({ line: n + 1, text: raw, reason: '単語の列が空' });
+        skipped.push({ line: n + 1, text: raw, reason: 'no word' });
         continue;
       }
       if (!meaning) {
-        skipped.push({ line: n + 1, text: raw, reason: '日本語訳が無い' });
+        skipped.push({ line: n + 1, text: raw, reason: 'no meaning' });
         continue;
       }
 
