@@ -131,57 +131,49 @@ test('見せる段階と読み上げが噛み合っている（読む物の無�
   }
 });
 
-// --- 繰り返し（覚えるために同じものを続けて言う） ---
+// --- 繰り返し（覚えるために、同じ組をもう一度はじめから見せる） ---
 
-test('繰り返し 2 回で、単語と訳をそれぞれ 2 回続けて言う', () => {
-  const o = Object.assign({ mode: 'full', direction: 'example-first', ttsPlan: 'full', repeat: 2 }, L);
-  assert.deepStrictEqual(plan.speech(CARD, 'term', o).map((s) => s.t), [CARD.term, CARD.term]);
-  assert.deepStrictEqual(plan.speech(CARD, 'meaning', o).map((s) => s.t), [CARD.meaning, CARD.meaning]);
+test('繰り返しの既定は 1 周', () => {
+  assert.strictEqual(plan.passes(), 1);
+  assert.strictEqual(plan.passes({}), 1);
+  assert.strictEqual(plan.passes({ repeat: 1 }), 1);
 });
 
-test('繰り返しは「まとめて 2 周」ではなく「その場で 2 回」', () => {
-  const o = Object.assign({ mode: 'full', direction: 'example-first', ttsPlan: 'full', repeat: 2 }, L);
-  assert.deepStrictEqual(
-    plan.speech(CARD, 'example', o).map((s) => s.t),
-    [CARD.example, CARD.example, CARD.exampleJa, CARD.exampleJa],
-    '例文 → 例文 → 訳 → 訳 の順'
-  );
+test('2× は 2 周', () => {
+  assert.strictEqual(plan.passes({ repeat: 2 }), 2);
 });
 
-test('繰り返しを付けたら、締めの例文は足さない（既に 2 回言っている）', () => {
-  const one = Object.assign({ mode: 'full', direction: 'term-first', ttsPlan: 'full', repeat: 1 }, L);
+test('周の数は 1〜3 に収める', () => {
+  assert.strictEqual(plan.passes({ repeat: 0 }), 1);
+  assert.strictEqual(plan.passes({ repeat: -5 }), 1);
+  assert.strictEqual(plan.passes({ repeat: 2.4 }), 2);
+  assert.strictEqual(plan.passes({ repeat: 3 }), 3);
+  assert.strictEqual(plan.passes({ repeat: 99 }), 3);
+  assert.strictEqual(plan.passes({ repeat: 'ふつう' }), 1);
+});
+
+test('繰り返しても、1 周の中身は変わらない', () => {
+  const one = { mode: 'full', direction: 'example-first', ttsPlan: 'full', repeat: 1 };
   const two = Object.assign({}, one, { repeat: 2 });
-  assert.deepStrictEqual(plan.speech(CARD, 'example', one).map((s) => s.t),
-    [CARD.example, CARD.exampleJa, CARD.example]);
-  assert.deepStrictEqual(plan.speech(CARD, 'example', two).map((s) => s.t),
-    [CARD.example, CARD.example, CARD.exampleJa, CARD.exampleJa]);
+  assert.deepStrictEqual(plan.stages(CARD, two), plan.stages(CARD, one));
+  ['term', 'meaning', 'example'].forEach((role) => {
+    assert.deepStrictEqual(say(role, two), say(role, one), role + ' が周ごとに変わっている');
+  });
 });
 
-test('単語だけモードでも繰り返しが効く', () => {
+test('2 周めは、1 周めと同じ順で同じものを読み上げる', () => {
+  const o = Object.assign({ mode: 'full', direction: 'example-first', ttsPlan: 'full', repeat: 2 }, L);
+  const lap = () => plan.stages(CARD, o).flatMap((role) => plan.speech(CARD, role, o).map((s) => s.t));
+  assert.deepStrictEqual(lap(), [CARD.example, CARD.exampleJa, CARD.term, CARD.meaning]);
+  assert.deepStrictEqual(lap().concat(lap()), [
+    CARD.example, CARD.exampleJa, CARD.term, CARD.meaning,
+    CARD.example, CARD.exampleJa, CARD.term, CARD.meaning
+  ], '2 周ぶんは 1 周を 2 つつないだもの');
+});
+
+test('単語だけモードでも周は数えられる（単語 → 訳 を 2 周）', () => {
   const o = Object.assign({ mode: 'quick', direction: 'term-first', ttsPlan: 'full', repeat: 2 }, L);
-  assert.deepStrictEqual(plan.speech(CARD, 'term', o).map((s) => s.t), [CARD.term, CARD.term]);
+  assert.strictEqual(plan.passes(o), 2);
+  assert.deepStrictEqual(plan.stages(CARD, o), ['term', 'meaning']);
   assert.deepStrictEqual(plan.speech(CARD, 'example', o), [], '例文は読まないまま');
-});
-
-test('読み上げない範囲は、繰り返しても増えない', () => {
-  const o = Object.assign({ mode: 'full', direction: 'example-first', ttsPlan: 'word', repeat: 2 }, L);
-  assert.deepStrictEqual(plan.speech(CARD, 'meaning', o), []);
-  assert.deepStrictEqual(plan.speech(CARD, 'example', o), []);
-  assert.deepStrictEqual(plan.speech(CARD, 'term', o).map((s) => s.t), [CARD.term, CARD.term]);
-});
-
-test('繰り返しの回数は 1〜3 に収める', () => {
-  const at = (repeat) => plan.speech(CARD, 'term',
-    Object.assign({ mode: 'full', direction: 'example-first', ttsPlan: 'full', repeat }, L)).length;
-  assert.strictEqual(at(undefined), 1);
-  assert.strictEqual(at(0), 1);
-  assert.strictEqual(at(-5), 1);
-  assert.strictEqual(at(3), 3);
-  assert.strictEqual(at(99), 3);
-});
-
-test('繰り返しは読み上げだけ。見せる段階は増えない', () => {
-  const one = plan.stages(CARD, { mode: 'full', direction: 'example-first', repeat: 1 });
-  const two = plan.stages(CARD, { mode: 'full', direction: 'example-first', repeat: 2 });
-  assert.deepStrictEqual(two, one);
 });

@@ -679,6 +679,8 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 .dots { display: flex; justify-content: center; gap: 7px; padding: 6px 0 10px; }
 .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--surface-2); transition: background .2s, transform .2s; }
 .dots i.on { background: var(--accent); transform: scale(1.25); }
+/* 繰り返しの 2 周目からは、点の間を少し空けて周の切れ目を見せる */
+.dots i.lap { margin-left: 9px; }
 
 .controls { display: flex; justify-content: center; gap: 26px; padding-bottom: 8px; }
 .controls .icon { font-size: 21px; }

@@ -115,8 +115,8 @@
     <div class="picker" id="repeat-row">
       <svg class="picker-icon" aria-hidden="true"><use href="#i-repeat"/></svg>
       <div class="segmented" id="repeat-picker" role="group" aria-label="Repeat">
-        <button data-repeat="1" class="on" aria-label="Read once">1×</button>
-        <button data-repeat="2" aria-label="Read twice">2×</button>
+        <button data-repeat="1" class="on" aria-label="Once through">1×</button>
+        <button data-repeat="2" aria-label="Twice through">2×</button>
       </div>
     </div>
 
@@ -301,6 +301,13 @@
         <option value="meaning-first">Meaning first</option>
       </select>
     </label>
+    <label class="field row">
+      <span>Repeat</span>
+      <select id="set-repeat">
+        <option value="1">1×</option>
+        <option value="2">2×</option>
+      </select>
+    </label>
     <label class="switch">
       <span>Show example translation</span>
       <input type="checkbox" id="set-show-example-ja">
@@ -325,13 +332,6 @@
         <option value="short">Skip example JA</option>
         <option value="target">Target only</option>
         <option value="word">Word only</option>
-      </select>
-    </label>
-    <label class="field row">
-      <span>Repeat</span>
-      <select id="set-repeat">
-        <option value="1">1×</option>
-        <option value="2">2×</option>
       </select>
     </label>
     <label class="field row">

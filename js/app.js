@@ -571,6 +571,8 @@
     session: null,
     stages: [],
     stage: 0,
+    passes: 1,
+    pass: 0,
     paused: false,
     links: [],
     speaking: false,
@@ -593,6 +595,11 @@
 
   function stagesFor(card) {
     return plan.stages(card, planOpts());
+  }
+
+  /** いまの段階が、このカードで最後の段階か（繰り返しの最後の周かどうかも見る） */
+  function atCardEnd() {
+    return st.stage >= st.stages.length - 1 && st.pass >= st.passes - 1;
   }
 
   function startStudy() {
@@ -764,7 +771,9 @@
     var c = cur.card;
     if (fresh) {
       st.stages = stagesFor(c);
+      st.passes = plan.passes(planOpts());
       st.stage = 0;
+      st.pass = 0;
     }
 
     $('line-term').textContent = c.term;
@@ -802,11 +811,14 @@
     if (showLinks) paintLinkNotes(st.links);
 
     // 点と進み具合
+    // 点は「段階 × 周」。繰り返しているときは、いま何周目かも点で分かる
     var dots = $('dots');
     dots.textContent = '';
-    for (var i = 0; i < st.stages.length; i++) {
+    var done = st.pass * st.stages.length + st.stage;
+    for (var i = 0; i < st.stages.length * st.passes; i++) {
       var d = el('i');
-      if (i <= st.stage) d.className = 'on';
+      if (i <= done) d.className = 'on';
+      if (i && i % st.stages.length === 0) d.classList.add('lap');
       dots.appendChild(d);
     }
     var total = st.session.setTotal();
@@ -851,8 +863,9 @@
 
   function afterSpeech(mySeq) {
     if (mySeq !== st.seq || st.paused) return;
-    var last = st.stage >= st.stages.length - 1;
+    var last = atCardEnd();
     // 最後の段階なら「自動送り（次の単語へ）」、途中なら「自動めくり」
+    // （繰り返しの周と周の間は、カードの中の送りなので「自動めくり」のほう）
     if (last ? !settings.autoNext : !settings.autoFlip) return;
     var quick = settings.mode === 'quick';
     var delay = last
@@ -879,6 +892,11 @@
   function nextStage(auto) {
     if (st.stage < st.stages.length - 1) {
       st.stage++;
+      renderCard(false);
+    } else if (st.pass < st.passes - 1) {
+      // 同じカードをもう一周。はじめの段階に戻して見せ直す
+      st.pass++;
+      st.stage = 0;
       renderCard(false);
     } else if (auto) {
       // 判定しないまま最後まで見た → 記録せず次の単語へ
