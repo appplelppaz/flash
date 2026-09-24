@@ -25,7 +25,10 @@
     { id: 'en-eiken1', name: '英検1級以上', lang: 'en', count: 2077, src: 'js/data/en-eiken1.js', note: '英検1級以上で問われる語彙（発音記号つき）' },
     { id: 'zh-hsk69', name: 'HSK 6〜9級', lang: 'zh', count: 2051, src: 'js/data/zh-hsk69.js', note: 'HSK 6級〜9級（高等）相当の語彙（ピンインつき）' },
     { id: 'es-vida3000', name: '生活スペイン語 3000', lang: 'es', count: 3000, src: 'js/data/es-vida3000.js', note: 'スペイン語圏での生活に必要な 3000 語' },
-    { id: 'fr-vie3000', name: '生活フランス語 3000', lang: 'fr', count: 3000, src: 'js/data/fr-vie3000.js', note: 'フランスでの生活に必要な 3000 語' }
+    { id: 'fr-vie3000', name: '生活フランス語 3000', lang: 'fr', count: 3000, src: 'js/data/fr-vie3000.js', note: 'フランスでの生活に必要な 3000 語' },
+    { id: 'en-diplomat-s1e1', name: 'The Diplomat S1E1', lang: 'en', count: 70, src: 'js/data/en-diplomat-s1e1.js', note: '「The Diplomat」S1E1「The Cinderella Thing」の語彙・慣用句' },
+    { id: 'en-diplomat-s1e2', name: 'The Diplomat S1E2', lang: 'en', count: 58, src: 'js/data/en-diplomat-s1e2.js', note: '「The Diplomat」S1E2「Don\'t Call It a Kidnapping」の語彙・慣用句' },
+    { id: 'en-diplomat-s1e3', name: 'The Diplomat S1E3', lang: 'en', count: 102, src: 'js/data/en-diplomat-s1e3.js', note: '「The Diplomat」S1E3「Lambs in the Dark」の語彙・慣用句' }
   ];
 
   var meta = [];          // 取り込んだリストのメタ情報
