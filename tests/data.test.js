@@ -78,5 +78,5 @@ test('library.js が持つ語数が実データと合っている', () => {
     assert.strictEqual(list.words.length, Number(count), `${id} の語数が library.js と合わない（実際は ${list.words.length}）`);
     checked++;
   }
-  assert.strictEqual(checked, 4, '収録リストの数が 4 でない');
+  assert.strictEqual(checked, 7, '収録リストの数が 7 でない');
 });
