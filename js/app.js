@@ -187,7 +187,7 @@
 
   /* ---- リスト画面 -------------------------------------------------- */
 
-  var deck = null;   // { meta, cards, progress }
+  var deck = null;   // { meta, cards, progress, position }
 
   function openDeck(id) {
     var meta = library.find(id);
@@ -195,8 +195,8 @@
     $('deck-title').textContent = meta.name;
     $('deck-nums').innerHTML = '読み込み中…';
     show('deck');
-    Promise.all([library.cards(id), library.progress(id)]).then(function (r) {
-      deck = { meta: meta, cards: r[0], progress: r[1] };
+    Promise.all([library.cards(id), library.progress(id), library.position(id)]).then(function (r) {
+      deck = { meta: meta, cards: r[0], progress: r[1], position: r[2] };
       renderDeck();
     }).catch(function (e) {
       $('deck-nums').textContent = '読み込めませんでした';
@@ -207,6 +207,13 @@
   function scopeCount(scope) {
     if (!deck) return 0;
     return Session.selectPool(deck.cards, deck.progress, scope).length;
+  }
+
+  /** 前回の続きから始められるなら、その学習（まだ start していない）を返す */
+  function resumableSession() {
+    if (!deck || !deck.position) return null;
+    var s = newSession(false);
+    return s.resumed() ? s : null;
   }
 
   function renderDeck() {
@@ -234,8 +241,12 @@
     });
 
     var n = Math.min(settings.setSize, scopeCount(settings.scope));
-    $('start-label').textContent = n > 0 ? n + ' 語で学習を始める' : '出題できる語がありません';
+    var resume = n > 0 && resumableSession();
+    $('start-label').textContent = resume
+      ? '続きから再生する'
+      : n > 0 ? n + ' 語で学習を始める' : '出題できる語がありません';
     $('btn-start').disabled = n === 0;
+    $('deck-restart-row').hidden = !resume;
     $('btn-deck-delete').textContent = deck.meta.builtin ? 'リストは削除できません' : 'リストを削除';
     $('btn-deck-delete').disabled = !!deck.meta.builtin;
   }
@@ -258,11 +269,13 @@
       });
     });
     $('btn-deck-cards').addEventListener('click', function () { openCards(); });
-    $('btn-start').addEventListener('click', startStudy);
+    $('btn-start').addEventListener('click', function () { startStudy(false); });
+    $('btn-deck-restart').addEventListener('click', function () { startStudy(true); });
     $('btn-deck-reset').addEventListener('click', function () {
       if (!deck || !confirm('「' + deck.meta.name + '」の進み具合を消します。よろしいですか？')) return;
       library.resetProgress(deck.meta.id).then(function () {
         deck.progress = library.cachedProgress(deck.meta.id);
+        deck.position = null;
         renderDeck();
         toast('進み具合をリセットしました');
       });
@@ -540,15 +553,23 @@
     return base;
   }
 
-  function startStudy() {
-    if (!deck) return;
-    var session = Session.create({
+  function newSession(fromTop) {
+    return Session.create({
       cards: deck.cards,
       progress: deck.progress,
       setSize: settings.setSize,
       scope: settings.scope,
-      order: settings.order
+      order: settings.order,
+      resume: fromTop ? null : deck.position
     });
+  }
+
+  /**
+   * @param {boolean} fromTop  true なら前回の続きを捨てて最初から
+   */
+  function startStudy(fromTop) {
+    if (!deck) return;
+    var session = newSession(fromTop);
     if (!session.start()) {
       toast('出題できる語がありません');
       return;
@@ -566,7 +587,15 @@
     } else {
       $('coach').hidden = true;
     }
+    if (session.resumed()) toast('前回の続きから再生します');
     renderCard(true);
+  }
+
+  /** いまの位置を覚えておく（次にこのリストを開いたとき続きから始めるため） */
+  function savePosition(now) {
+    if (!deck || !st.session || st.session.finished()) return;
+    deck.position = st.session.snapshot();
+    library.savePosition(deck.meta.id, deck.position, now);
   }
 
   function stopStudy() {
@@ -644,6 +673,7 @@
     if (fresh) {
       st.stages = stagesFor(c);
       st.stage = 0;
+      savePosition();
     }
 
     $('line-term').textContent = c.term;
@@ -841,6 +871,9 @@
     releaseWakeLock();
     var s = st.session ? st.session.stats() : { answered: 0, correct: 0, learned: 0, sets: 0, elapsed: 0, accuracy: 0 };
     library.saveProgress(deck.meta.id, deck.progress, true);
+    // 最後まで行ったので、次は最初から
+    deck.position = null;
+    library.clearPosition(deck.meta.id);
 
     var total = deck.cards.length;
     var learned = countLearned(deck.progress);
@@ -868,6 +901,7 @@
 
   function quitStudy() {
     if (deck) library.saveProgress(deck.meta.id, deck.progress, true);
+    savePosition(true);
     st.session = null;
     stopStudy();
     renderHome();
@@ -968,7 +1002,7 @@
     });
     $('btn-result-again').addEventListener('click', function () {
       renderDeck();
-      startStudy();
+      startStudy(false);
     });
   }
 
