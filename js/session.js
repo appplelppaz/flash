@@ -6,6 +6,9 @@
  *   まだ     → 3 枚あとに積み直され、同じセットの中で必ずもう一度出る
  *   判定なし → 記録せずキューの末尾へ回す
  * キューが空になったら、残りの語で次のセットが自動的に始まる。
+ *
+ * snapshot() で今どこまで進んだかを取り出し、次に create() へ resume として
+ * 渡すと、同じ出題範囲・並び順ならその続きから始まる。
  */
 (function (global) {
   'use strict';
@@ -67,6 +70,36 @@
   }
 
   /**
+   * 前回の続きの並びを組み立てる。
+   * いまの出題対象に無い語（その後に覚えた語など）は落とし、
+   * 前回には無かった語（リセットで未学習に戻った語など）は後ろに足す。
+   * 続きにできないときは null。
+   */
+  function restoreOrder(pool, resume, scope, order) {
+    if (!resume || resume.scope !== scope || resume.order !== order) return null;
+    var inPool = {};
+    for (var i = 0; i < pool.length; i++) inPool[pool[i]] = true;
+    var seen = {};
+    function keep(ids) {
+      var out = [];
+      (ids || []).forEach(function (id) {
+        if (inPool[id] && !seen[id]) { seen[id] = true; out.push(id); }
+      });
+      return out;
+    }
+    var queue = keep(resume.queue);
+    var remaining = keep(resume.remaining);
+    pool.forEach(function (id) { if (!seen[id]) remaining.push(id); });
+    if (!queue.length && !remaining.length) return null;
+    return {
+      queue: queue,
+      remaining: remaining,
+      setTotal: queue.length ? Math.max(queue.length, resume.setTotal || 0) : 0,
+      setNo: queue.length ? Math.max(1, resume.setNo || 1) : Math.max(0, resume.setNo || 0)
+    };
+  }
+
+  /**
    * @param {Object} opts
    * @param {Array}  opts.cards     カードの配列
    * @param {Object} opts.progress  index -> {learned,right,wrong,fav}（この場で書き換える）
@@ -74,6 +107,7 @@
    * @param {string} opts.scope     new | weak | fav | all
    * @param {string} opts.order     listed | random | weak-first
    * @param {Function} [opts.random]
+   * @param {Object}   [opts.resume]  前回の snapshot()。範囲と並び順が同じなら続きから
    */
   function create(opts) {
     var cards = opts.cards || [];
@@ -83,11 +117,13 @@
     var order = opts.order || 'listed';
     var rand = opts.random;
 
-    var remaining = orderPool(selectPool(cards, progress, scope), progress, order, rand);
-    var queue = [];
-    var setTotal = 0;
+    var pool = selectPool(cards, progress, scope);
+    var restored = restoreOrder(pool, opts.resume, scope, order);
+    var remaining = restored ? restored.remaining : orderPool(pool, progress, order, rand);
+    var queue = restored ? restored.queue : [];
+    var setTotal = restored ? restored.setTotal : 0;
     var history = [];
-    var setNo = 0;
+    var setNo = restored ? restored.setNo : 0;
     var stats = { answered: 0, correct: 0, learned: 0, sets: 0, startedAt: Date.now() };
 
     function fillSet() {
@@ -123,7 +159,28 @@
 
     var api = {
       /** 出題があるか */
-      start: function () { return fillSet(); },
+      start: function () {
+        if (queue.length) {
+          stats.sets = setNo;
+          return true;
+        }
+        return fillSet();
+      },
+
+      /** 前回の続きから始めたか */
+      resumed: function () { return !!restored; },
+
+      /** 今どこまで進んだか（保存して次の create() の resume に渡す） */
+      snapshot: function () {
+        return {
+          scope: scope,
+          order: order,
+          queue: queue.slice(),
+          remaining: remaining.slice(),
+          setTotal: setTotal,
+          setNo: setNo
+        };
+      },
 
       current: function () {
         var id = currentId();

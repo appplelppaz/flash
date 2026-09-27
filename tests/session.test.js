@@ -167,3 +167,77 @@ test('セットに最初何語入っていたかを持っている', () => {
   s.known(); s.known();
   assert.strictEqual(s.setTotal(), 2, '次のセットに入ったら更新される');
 });
+
+test('snapshot を resume に渡すと前回の続きから始まる', () => {
+  const progress = {};
+  const s = Session.create({ cards: deck(10), progress, setSize: 3 });
+  s.start();
+  s.skip();
+  s.skip();
+  const pos = s.snapshot();
+  const t = Session.create({ cards: deck(10), progress, setSize: 3, resume: pos });
+  assert.ok(t.start());
+  assert.ok(t.resumed());
+  assert.strictEqual(t.current().card.term, 'w2');
+  assert.strictEqual(t.remaining(), 7);
+  assert.strictEqual(t.setTotal(), 3);
+});
+
+test('次のセットに進んでいれば、そのセットの続きから', () => {
+  const progress = {};
+  const s = Session.create({ cards: deck(10), progress, setSize: 3 });
+  s.start();
+  s.known(); s.known(); s.known();
+  s.skip();
+  const t = Session.create({ cards: deck(10), progress, setSize: 3, resume: s.snapshot() });
+  t.start();
+  assert.strictEqual(t.current().card.term, 'w4');
+  assert.strictEqual(t.setNo(), 2);
+  assert.strictEqual(t.remaining(), 4);
+});
+
+test('出題範囲や並び順が違えば最初から', () => {
+  const progress = {};
+  const s = Session.create({ cards: deck(10), progress, setSize: 3, scope: 'all' });
+  s.start();
+  s.skip();
+  const pos = s.snapshot();
+  const t = Session.create({ cards: deck(10), progress, setSize: 3, scope: 'new', resume: pos });
+  t.start();
+  assert.ok(!t.resumed());
+  assert.strictEqual(t.current().card.term, 'w0');
+  const u = Session.create({ cards: deck(10), progress, setSize: 3, scope: 'all', order: 'random', resume: pos });
+  assert.ok(!u.resumed());
+});
+
+test('続きから始めても、その後に出題対象から外れた語は出ず、戻った語は後ろに付く', () => {
+  const progress = {};
+  const s = Session.create({ cards: deck(6), progress, setSize: 3 });
+  s.start();
+  s.skip();
+  const pos = s.snapshot();          // queue [1,2,0] remaining [3,4,5]
+  progress[1] = { learned: true, right: 1, wrong: 0, fav: false };
+  pos.remaining = [3, 4];            // 5 が何かの理由で抜けていても
+  const t = Session.create({ cards: deck(6), progress, setSize: 3, resume: pos });
+  t.start();
+  assert.strictEqual(t.current().card.term, 'w2');
+  assert.strictEqual(t.setLeft(), 2);
+  assert.strictEqual(t.remaining(), 3);
+  const seen = [];
+  while (!t.finished()) { seen.push(t.current().id); t.known(); }
+  assert.deepStrictEqual(seen, [2, 0, 3, 4, 5]);
+});
+
+test('続きが残っていなければ最初から', () => {
+  const progress = {};
+  const s = Session.create({ cards: deck(2), progress, setSize: 3 });
+  s.start();
+  const pos = s.snapshot();
+  progress[0] = { learned: true, right: 1, wrong: 0, fav: false };
+  progress[1] = { learned: true, right: 1, wrong: 0, fav: false };
+  const t = Session.create({ cards: deck(2), progress, setSize: 3, scope: 'all', resume: Object.assign({}, pos, { scope: 'all' }) });
+  assert.ok(t.resumed());
+  const u = Session.create({ cards: deck(2), progress, setSize: 3, resume: pos });
+  assert.ok(!u.resumed());
+  assert.ok(!u.start());
+});

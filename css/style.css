@@ -326,6 +326,9 @@ button { background: none; border: 0; cursor: pointer; -webkit-tap-highlight-col
 
 .row-actions { display: flex; gap: 10px; margin-top: 30px; }
 .row-actions.column { flex-direction: column; }
+.row-actions[hidden] { display: none; }
+#deck-restart-row + .row-actions { margin-top: 10px; }
+#deck-restart-row[hidden] + .row-actions { margin-top: 30px; }
 
 .ghost {
   flex: 1;
