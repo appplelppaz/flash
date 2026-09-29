@@ -281,7 +281,7 @@ test('表示した語は seen と seenAt が付く。判定は記録しない', 
   assert.strictEqual(progress[0].seenAt, 200);
 });
 
-test('起動し直しても、まだ表示していない語から出る。表示した語は古い順に後ろへ', () => {
+test('起動し直しても、まだ表示していない語から出る。表示した語は回数の少ない順・古い順に後ろへ', () => {
   const progress = {
     0: { learned: false, right: 0, wrong: 0, fav: false, seen: 1, seenAt: 300 },
     1: { learned: false, right: 0, wrong: 0, fav: false, seen: 2, seenAt: 100 },
@@ -293,7 +293,7 @@ test('起動し直しても、まだ表示していない語から出る。表�
   s.start();
   const order = [];
   while (!s.finished()) { order.push(s.current().id); s.known(); }
-  assert.deepStrictEqual(order, [2, 4, 1, 3, 0]);
+  assert.deepStrictEqual(order, [2, 4, 3, 0, 1]);
 });
 
 test('ランダムでもまだ表示していない語が先', () => {
@@ -333,4 +333,42 @@ test('苦手順では苦手さが先。同じ苦手さならまだ表示して�
   const order = [];
   while (!s.finished()) { order.push(s.current().id); s.known(); }
   assert.deepStrictEqual(order, [3, 1, 2, 0]);
+});
+
+test('全部表示し終えたら、表示回数の少ない順に出る', () => {
+  const progress = {
+    0: { seen: 3, seenAt: 1 },
+    1: { seen: 1, seenAt: 50 },
+    2: { seen: 2, seenAt: 10 },
+    3: { seen: 1, seenAt: 20 }
+  };
+  const s = Session.create({ cards: deck(4), progress, setSize: 10 });
+  s.start();
+  const order = [];
+  while (!s.finished()) { order.push(s.current().id); s.known(); }
+  assert.deepStrictEqual(order, [3, 1, 2, 0]);
+});
+
+test('全部表示し終えたあとも、送り続ければ表示回数がならされていく', () => {
+  const progress = {};
+  const now = clock();
+  const s = Session.create({ cards: deck(5), progress, setSize: 2, now });
+  s.start();
+  for (let i = 0; i < 23; i++) { s.markSeen(); s.skip(); }
+  const counts = [0, 1, 2, 3, 4].map(id => progress[id].seen);
+  assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, counts.join(','));
+});
+
+test('送った語は、表示回数の少ない語より後ろ、多い語より前へ回る', () => {
+  const progress = {
+    2: { seen: 1, seenAt: 1 },
+    3: { seen: 5, seenAt: 2 }
+  };
+  const now = clock();
+  const s = Session.create({ cards: deck(4), progress, setSize: 1, now });
+  s.start();                          // 並び [0, 1, 2, 3]
+  s.markSeen(); s.skip();             // 0 は 1 回 → 2 の後ろ、3 の前
+  const order = [];
+  while (!s.finished()) { order.push(s.current().id); s.known(); }
+  assert.deepStrictEqual(order, [1, 2, 0, 3]);
 });

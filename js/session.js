@@ -4,13 +4,13 @@
  * 1 セット = 出題語数ぶんのキュー。
  *   覚えた   → その語は学習済みになりキューから外れる（以後の出題にも出ない）
  *   まだ     → 3 枚あとに積み直され、同じセットの中で必ずもう一度出る
- *   判定なし → 覚えた／まだは記録せず、まだ出していない語に順番を譲る
- *              （残りの語の最後へ回す。残りが無ければセットの末尾へ）
+ *   判定なし → 覚えた／まだは記録せず、表示回数の少ない語に順番を譲る
+ *              （残りの語の中で、表示回数が同じ語の後ろへ回す。残りが無ければセットの末尾へ）
  * キューが空になったら、残りの語で次のセットが自動的に始まる。
  *
  * 表示した語には seen（回数）と seenAt（最後に表示した時刻）を付ける。
- * 出題の並びは「まだ一度も表示していない語」が先、表示したことのある語は
- * 最後に表示したのが古い順に後ろへ並ぶ。
+ * 出題の並びは「まだ一度も表示していない語」が先。全部表示し終えたあとも
+ * 出なくなるのではなく、表示回数の少ない順（同じ回数なら最後に見たのが古い順）に出る。
  *
  * snapshot() で今どこまで進んだかを取り出し、次に create() へ resume として
  * 渡すと、同じ出題範囲・並び順ならその続きから始まる。
@@ -73,21 +73,30 @@
     return (p.right || p.wrong || p.learned) ? 0 : -1;
   }
 
+  /** 表示した回数。記録が無くても判定したことのある語は 1 回とみなす */
+  function shownCount(progress, id) {
+    var p = progress[id];
+    if (!p) return 0;
+    if (p.seen) return p.seen;
+    return (p.right || p.wrong || p.learned) ? 1 : 0;
+  }
+
+  /** 表示回数の少ない語が先。同じ回数なら最後に見たのが古い語が先 */
+  function compareShown(progress, a, b) {
+    return (shownCount(progress, a) - shownCount(progress, b)) ||
+      (seenAt(progress, a) - seenAt(progress, b));
+  }
+
   /**
-   * まだ表示していない語を先に（並びはそのまま）。
-   * 表示した語は後ろへ。byTime なら最後に見たのが古い順に並べ直す。
+   * 表示回数の少ない順に並べ直す（まだ表示していない語が先頭）。
+   * 回数も最後に見た時刻も同じ語は、もとの並びのまま。
    */
-  function unseenFirst(ids, progress, byTime) {
-    var fresh = [], shown = [];
-    ids.forEach(function (id) { (seenAt(progress, id) < 0 ? fresh : shown).push(id); });
-    if (byTime) {
-      var rank = {};
-      shown.forEach(function (id, i) { rank[id] = i; });
-      shown.sort(function (a, b) {
-        return (seenAt(progress, a) - seenAt(progress, b)) || (rank[a] - rank[b]);
-      });
-    }
-    return fresh.concat(shown);
+  function fewestShownFirst(ids, progress) {
+    var rank = {};
+    ids.forEach(function (id, i) { rank[id] = i; });
+    return ids.slice().sort(function (a, b) {
+      return compareShown(progress, a, b) || (rank[a] - rank[b]);
+    });
   }
 
   function orderPool(pool, progress, order, rand) {
@@ -97,14 +106,12 @@
         var pa = progressOf(progress, a), pb = progressOf(progress, b);
         var wa = pa.wrong - pa.right, wb = pb.wrong - pb.right;
         if (wa !== wb) return wb - wa;
-        // 苦手さが同じなら、まだ表示していない語 → 最後に見たのが古い語
-        var sa = seenAt(progress, a), sb = seenAt(progress, b);
-        if (sa !== sb) return sa - sb;
-        return a - b;
+        // 苦手さが同じなら、表示回数の少ない語 → 最後に見たのが古い語
+        return compareShown(progress, a, b) || (a - b);
       });
     }
-    // まだ表示していない語を先に。表示した語は最後に見たのが古い順
-    return unseenFirst(order === 'random' ? shuffle(pool, rand) : pool.slice(), progress, true);
+    // まだ表示していない語を先に。表示した語は表示回数の少ない順
+    return fewestShownFirst(order === 'random' ? shuffle(pool, rand) : pool.slice(), progress);
   }
 
   /**
@@ -132,7 +139,7 @@
     if (!ids.length) return null;
     return {
       queue: [],
-      remaining: order === 'weak-first' ? orderPool(ids, progress, order) : unseenFirst(ids, progress, true),
+      remaining: order === 'weak-first' ? orderPool(ids, progress, order) : fewestShownFirst(ids, progress),
       setTotal: 0,
       setNo: Math.max(0, resume.setNo || 0)
     };
@@ -191,11 +198,23 @@
       queue.splice(at, 0, id);
     }
 
+    /**
+     * 表示回数の少ない語に順番を譲る。表示回数が同じかより少ない語の後ろへ入れる
+     * （苦手順では苦手さの並びを崩さないよう、最後へ）。
+     */
+    function deferToRemaining(id) {
+      if (order === 'weak-first') { remaining.push(id); return; }
+      var n = shownCount(progress, id);
+      var at = remaining.length;
+      while (at > 0 && shownCount(progress, remaining[at - 1]) > n) at--;
+      remaining.splice(at, 0, id);
+    }
+
     function advance(id, gap, record) {
       queue.shift();
       pushHistory(id);
       if (record === 'defer' && remaining.length) {
-        remaining.push(id);   // まだ出していない語に順番を譲る
+        deferToRemaining(id);
       } else if (record !== 'remove') requeue(id, gap);
       if (!queue.length) fillSet();
     }
