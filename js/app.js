@@ -64,12 +64,21 @@
 
   var stack = ['home'];
 
+  var updateReady = false;
+
+  function reloadIfIdle() {
+    var on = document.querySelector('.view.on');
+    if (!updateReady || (on && on.dataset.view === 'study')) return;
+    store.flush().then(function () { location.reload(); });
+  }
+
   function render(name) {
     var views = document.querySelectorAll('.view');
     for (var i = 0; i < views.length; i++) {
       views[i].classList.toggle('on', views[i].dataset.view === name);
     }
     if (name !== 'study') stopStudy();
+    if (name !== 'study' && updateReady) setTimeout(reloadIfIdle, 0);
     var scroller = document.querySelector('.view.on .scroll');
     if (scroller) scroller.scrollTop = 0;
   }
@@ -1199,6 +1208,14 @@
       });
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      // 新しい版に入れ替わったら一度だけ読み込み直す（古い版のまま動き続けないように）。
+      // 学習中なら、終わってリスト画面に戻ったときに読み込み直す
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController || updateReady) return;
+        updateReady = true;
+        reloadIfIdle();
+      });
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }
   }
