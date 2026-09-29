@@ -4,7 +4,7 @@
  * アプリ本体（HTML/CSS/JS/アイコン）は入れたときにまとめて保存する。
  * 大きな単語リスト（js/data/*.js）は一度開いたときに保存し、次からは取りに行かない。
  */
-var VERSION = 'v12';
+var VERSION = 'v13';
 var SHELL_CACHE = 'flash-shell-' + VERSION;
 var DATA_CACHE = 'flash-data-' + VERSION;
 
@@ -31,7 +31,10 @@ var SHELL = [
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(SHELL_CACHE)
-      .then(function (c) { return c.addAll(SHELL); })
+      .then(function (c) {
+        // ブラウザのキャッシュを通さず、必ず新しいファイルを取ってくる
+        return c.addAll(SHELL.map(function (u) { return new Request(u, { cache: 'reload' }); }));
+      })
       .then(function () { return self.skipWaiting(); })
   );
 });

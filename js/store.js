@@ -6,6 +6,7 @@
  *   lists             リストの一覧（メタ情報のみ）
  *   cards:<listId>    取り込んだリストの単語（収録リストはファイルから読む）
  *   prog:<listId>     学習の進み具合  index -> {learned,right,wrong,fav}
+ *   pos:<listId>      前回どこまで再生したか（Session の snapshot）
  *   stats             通算の記録（連続日数など）
  */
 (function (global) {

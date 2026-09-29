@@ -85,12 +85,22 @@
 
   var stack = ['home'];
 
+  var updateReady = false;
+
+  /** 新しい版が入っていれば読み込み直す（学習中は待つ） */
+  function reloadIfIdle() {
+    var on = document.querySelector('.view.on');
+    if (!updateReady || (on && on.dataset.view === 'study')) return;
+    store.flush().then(function () { location.reload(); });
+  }
+
   function render(name) {
     var views = document.querySelectorAll('.view');
     for (var i = 0; i < views.length; i++) {
       views[i].classList.toggle('on', views[i].dataset.view === name);
     }
     if (name !== 'study') stopStudy();
+    if (name !== 'study' && updateReady) setTimeout(reloadIfIdle, 0);
     var scroller = document.querySelector('.view.on .scroll');
     if (scroller) scroller.scrollTop = 0;
   }
@@ -211,7 +221,7 @@
 
   /* ---- リスト画面 -------------------------------------------------- */
 
-  var deck = null;   // { meta, cards, progress }
+  var deck = null;   // { meta, cards, progress, position }
 
   function openDeck(id) {
     var meta = library.find(id);
@@ -219,8 +229,8 @@
     $('deck-title').textContent = meta.name;
     $('deck-nums').textContent = '';
     show('deck');
-    Promise.all([library.cards(id), library.progress(id)]).then(function (r) {
-      deck = { meta: meta, cards: r[0], progress: r[1] };
+    Promise.all([library.cards(id), library.progress(id), library.position(id)]).then(function (r) {
+      deck = { meta: meta, cards: r[0], progress: r[1], position: r[2] };
       renderDeck();
     }).catch(function (e) {
       $('deck-nums').textContent = '';
@@ -246,9 +256,13 @@
 
     var nums = $('deck-nums');
     nums.textContent = '';
-    [['i-stack', total], ['i-sparkle', scopeCount('new')], ['i-close', scopeCount('weak')], ['i-star', scopeCount('fav')]]
+    [['i-stack', total, 'Words'], ['i-sparkle', scopeCount('new'), 'New'], ['i-close', scopeCount('weak'), 'Weak'],
+     ['i-star', scopeCount('fav'), 'Favorites'],
+     ['i-eye-off', Session.unseenCount(deck.cards, deck.progress, 'all'), 'Not shown yet']]
       .forEach(function (pair) {
         var row = el('span', 'num');
+        row.title = pair[2];
+        row.setAttribute('aria-label', pair[2] + ' ' + pair[1]);
         row.appendChild(icon(pair[0]));
         row.appendChild(el('b', null, pair[1].toLocaleString('en-US')));
         nums.appendChild(row);
@@ -318,6 +332,7 @@
       if (!deck || !confirm('Reset progress for "' + deck.meta.name + '"?')) return;
       library.resetProgress(deck.meta.id).then(function () {
         deck.progress = library.cachedProgress(deck.meta.id);
+        deck.position = null;
         renderDeck();
         toast('Progress reset');
       });
@@ -603,12 +618,14 @@
 
   function startStudy() {
     if (!deck) return;
+    // 前回の続きがあれば、そこから（まだ表示していない語が先）
     var session = Session.create({
       cards: deck.cards,
       progress: deck.progress,
       setSize: settings.setSize,
       scope: settings.scope,
-      order: settings.order
+      order: settings.order,
+      resume: deck.position
     });
     if (!session.start()) {
       toast('Nothing to study');
@@ -630,6 +647,13 @@
       $('coach').hidden = true;
     }
     renderCard(true);
+  }
+
+  /** いまの位置を覚えておく（次にこのリストを開いたとき続きから始めるため） */
+  function savePosition(now) {
+    if (!deck || !st.session || st.session.finished()) return;
+    deck.position = st.session.snapshot();
+    library.savePosition(deck.meta.id, deck.position, now);
   }
 
   function stopStudy() {
@@ -846,6 +870,10 @@
       st.passes = plan.passes(planOpts());
       st.stage = 0;
       st.pass = 0;
+      // 表示した記録を残す（次からはまだ表示していない語、表示回数の少ない語が先に出る）
+      st.session.markSeen();
+      library.saveProgress(deck.meta.id, deck.progress);
+      savePosition();
     }
 
     $('line-term').textContent = c.term;
@@ -1008,6 +1036,9 @@
     releaseWakeLock();
     var s = st.session ? st.session.stats() : { answered: 0, correct: 0, learned: 0, sets: 0, elapsed: 0, accuracy: 0 };
     library.saveProgress(deck.meta.id, deck.progress, true);
+    // 最後まで行ったので、次は最初から
+    deck.position = null;
+    library.clearPosition(deck.meta.id);
 
     var total = deck.cards.length;
     var learned = countLearned(deck.progress);
@@ -1036,6 +1067,7 @@
 
   function quitStudy() {
     if (deck) library.saveProgress(deck.meta.id, deck.progress, true);
+    savePosition(true);
     st.session = null;
     stopStudy();
     renderHome();
@@ -1357,6 +1389,14 @@
       });
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      // 新しい版に入れ替わったら一度だけ読み込み直す（古い版のまま動き続けないように）。
+      // 学習中なら、学習画面を出たときに読み込み直す
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController || updateReady) return;
+        updateReady = true;
+        reloadIfIdle();
+      });
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }
   }
