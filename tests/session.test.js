@@ -168,32 +168,50 @@ test('セットに最初何語入っていたかを持っている', () => {
   assert.strictEqual(s.setTotal(), 2, '次のセットに入ったら更新される');
 });
 
-test('snapshot を resume に渡すと前回の続きから始まる', () => {
+/** アプリと同じく、カードを出すたびに表示を記録しながら進める */
+function clock() { let t = 0; return () => ++t; }
+
+test('snapshot を resume に渡すと前回の続きから始まる。やめたときに出ていた語は後ろへ', () => {
   const progress = {};
-  const s = Session.create({ cards: deck(10), progress, setSize: 3 });
+  const now = clock();
+  const s = Session.create({ cards: deck(10), progress, setSize: 3, now });
   s.start();
-  s.skip();
-  s.skip();
+  s.markSeen(); s.skip();            // w0
+  s.markSeen(); s.skip();            // w1
+  s.markSeen();                      // w2 を表示したところでやめる
   const pos = s.snapshot();
-  const t = Session.create({ cards: deck(10), progress, setSize: 3, resume: pos });
+  const t = Session.create({ cards: deck(10), progress, setSize: 3, resume: pos, now });
   assert.ok(t.start());
   assert.ok(t.resumed());
-  assert.strictEqual(t.current().card.term, 'w2');
-  assert.strictEqual(t.remaining(), 9);   // 飛ばした 2 語は残りの最後へ
+  const order = [];
+  while (!t.finished()) { order.push(t.current().id); t.known(); }
+  assert.deepStrictEqual(order, [3, 4, 5, 6, 7, 8, 9, 0, 1, 2]);
+});
+
+test('次のセットに進んでいれば、まだ表示していない語の続きから', () => {
+  const progress = {};
+  const now = clock();
+  const s = Session.create({ cards: deck(10), progress, setSize: 3, now });
+  s.start();
+  s.markSeen(); s.known(); s.markSeen(); s.known(); s.markSeen(); s.known();
+  s.markSeen(); s.skip();            // w3
+  s.markSeen();                      // w4
+  const t = Session.create({ cards: deck(10), progress, setSize: 3, resume: s.snapshot(), now });
+  t.start();
+  assert.strictEqual(t.current().card.term, 'w5');
   assert.strictEqual(t.setTotal(), 3);
 });
 
-test('次のセットに進んでいれば、そのセットの続きから', () => {
-  const progress = {};
-  const s = Session.create({ cards: deck(10), progress, setSize: 3 });
-  s.start();
-  s.known(); s.known(); s.known();
-  s.skip();
-  const t = Session.create({ cards: deck(10), progress, setSize: 3, resume: s.snapshot() });
+test('前の版で保存した位置（セットの中で回っていた語）でも、未表示の語が先', () => {
+  // 以前はセットの中を回り続けていたので、queue の語は表示済みでも記録が無いことがある。
+  // 判定したことのある語は表示済みとみなす
+  const progress = { 1: { learned: false, right: 0, wrong: 1, fav: false } };
+  const pos = { scope: 'new', order: 'listed', queue: [0, 1, 2], remaining: [3, 4], setTotal: 3, setNo: 1 };
+  const t = Session.create({ cards: deck(5), progress, setSize: 3, resume: pos });
   t.start();
-  assert.strictEqual(t.current().card.term, 'w4');
-  assert.strictEqual(t.setNo(), 2);
-  assert.strictEqual(t.remaining(), 5);
+  const order = [];
+  while (!t.finished()) { order.push(t.current().id); t.known(); }
+  assert.deepStrictEqual(order, [0, 2, 3, 4, 1]);
 });
 
 test('出題範囲や並び順が違えば最初から', () => {
@@ -220,9 +238,6 @@ test('続きから始めても、その後に出題対象から外れた語は�
   pos.remaining = [3, 4];            // 5 と 0 が何かの理由で抜けていても
   const t = Session.create({ cards: deck(6), progress, setSize: 3, resume: pos });
   t.start();
-  assert.strictEqual(t.current().card.term, 'w2');
-  assert.strictEqual(t.setLeft(), 1);
-  assert.strictEqual(t.remaining(), 4);
   const seen = [];
   while (!t.finished()) { seen.push(t.current().id); t.known(); }
   assert.deepStrictEqual(seen, [2, 3, 4, 0, 5]);
@@ -272,13 +287,13 @@ test('起動し直しても、まだ表示していない語から出る。表�
     1: { learned: false, right: 0, wrong: 0, fav: false, seen: 2, seenAt: 100 },
     3: { learned: false, right: 0, wrong: 0, fav: false, seen: 1, seenAt: 200 }
   };
+  assert.strictEqual(Session.unseenCount(deck(5), {}, 'new'), 5);
+  assert.strictEqual(Session.unseenCount(deck(5), progress, 'all'), 2);
   const s = Session.create({ cards: deck(5), progress, setSize: 10 });
   s.start();
   const order = [];
   while (!s.finished()) { order.push(s.current().id); s.known(); }
   assert.deepStrictEqual(order, [2, 4, 1, 3, 0]);
-  assert.strictEqual(Session.unseenCount(deck(5), {}, 'new'), 5);
-  assert.strictEqual(Session.unseenCount(deck(5), progress, 'all'), 2);
 });
 
 test('ランダムでもまだ表示していない語が先', () => {
@@ -298,4 +313,24 @@ test('戻ったカードが残りの語に回っていても、ちゃんと戻�
   assert.ok(s.back());
   assert.strictEqual(s.current().id, 0);
   assert.strictEqual(s.remaining(), 3);
+});
+
+test('判定したことのある語は、表示の記録が無くても表示済みとみなす', () => {
+  const progress = { 0: { learned: false, right: 0, wrong: 2, fav: false } };
+  assert.strictEqual(Session.unseenCount(deck(3), progress, 'new'), 2);
+  const s = Session.create({ cards: deck(3), progress, setSize: 3 });
+  s.start();
+  assert.strictEqual(s.current().id, 1);
+});
+
+test('苦手順では苦手さが先。同じ苦手さならまだ表示していない語が先', () => {
+  const progress = {
+    0: { learned: false, right: 0, wrong: 0, fav: false, seen: 1, seenAt: 5 },
+    3: { learned: false, right: 0, wrong: 2, fav: false }
+  };
+  const s = Session.create({ cards: deck(4), progress, setSize: 4, order: 'weak-first' });
+  s.start();
+  const order = [];
+  while (!s.finished()) { order.push(s.current().id); s.known(); }
+  assert.deepStrictEqual(order, [3, 1, 2, 0]);
 });

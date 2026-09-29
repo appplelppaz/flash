@@ -61,27 +61,26 @@
     return pool;
   }
 
+  /**
+   * 最後に表示した時刻。一度も表示していなければ -1。
+   * 表示の記録が無くても、覚えた／まだを判定した語は表示したものとみなす
+   * （記録を付ける前の版で見た語）。
+   */
   function seenAt(progress, id) {
     var p = progress[id];
-    return p && p.seen ? (p.seenAt || 0) : -1;
+    if (!p) return -1;
+    if (p.seen) return p.seenAt || 0;
+    return (p.right || p.wrong || p.learned) ? 0 : -1;
   }
 
-  function orderPool(pool, progress, order, rand) {
-    var sorted;
-    if (order === 'random') sorted = shuffle(pool, rand);
-    else if (order === 'weak-first') {
-      sorted = pool.slice().sort(function (a, b) {
-        var pa = progressOf(progress, a), pb = progressOf(progress, b);
-        var wa = pa.wrong - pa.right, wb = pb.wrong - pb.right;
-        if (wa !== wb) return wb - wa;
-        return a - b;
-      });
-    } else sorted = pool.slice();
-
-    // まだ表示していない語を先に。表示した語は最後に見たのが古い順（苦手順ではその並びのまま）
+  /**
+   * まだ表示していない語を先に（並びはそのまま）。
+   * 表示した語は後ろへ。byTime なら最後に見たのが古い順に並べ直す。
+   */
+  function unseenFirst(ids, progress, byTime) {
     var fresh = [], shown = [];
-    sorted.forEach(function (id) { (seenAt(progress, id) < 0 ? fresh : shown).push(id); });
-    if (order !== 'weak-first') {
+    ids.forEach(function (id) { (seenAt(progress, id) < 0 ? fresh : shown).push(id); });
+    if (byTime) {
       var rank = {};
       shown.forEach(function (id, i) { rank[id] = i; });
       shown.sort(function (a, b) {
@@ -91,13 +90,32 @@
     return fresh.concat(shown);
   }
 
+  function orderPool(pool, progress, order, rand) {
+    if (order === 'weak-first') {
+      // 苦手順は苦手さを第一に並べる
+      return pool.slice().sort(function (a, b) {
+        var pa = progressOf(progress, a), pb = progressOf(progress, b);
+        var wa = pa.wrong - pa.right, wb = pb.wrong - pb.right;
+        if (wa !== wb) return wb - wa;
+        // 苦手さが同じなら、まだ表示していない語 → 最後に見たのが古い語
+        var sa = seenAt(progress, a), sb = seenAt(progress, b);
+        if (sa !== sb) return sa - sb;
+        return a - b;
+      });
+    }
+    // まだ表示していない語を先に。表示した語は最後に見たのが古い順
+    return unseenFirst(order === 'random' ? shuffle(pool, rand) : pool.slice(), progress, true);
+  }
+
   /**
    * 前回の続きの並びを組み立てる。
    * いまの出題対象に無い語（その後に覚えた語など）は落とし、
    * 前回には無かった語（リセットで未学習に戻った語など）は後ろに足す。
+   * そのうえで、前回のセットの途中だった語も含めて、まだ表示していない語を先に並べ直す
+   * （やめたときに出ていた語や、同じセットで回っていた語をもう一度先に出さないため）。
    * 続きにできないときは null。
    */
-  function restoreOrder(pool, resume, scope, order) {
+  function restoreOrder(pool, resume, scope, order, progress) {
     if (!resume || resume.scope !== scope || resume.order !== order) return null;
     var inPool = {};
     for (var i = 0; i < pool.length; i++) inPool[pool[i]] = true;
@@ -109,15 +127,14 @@
       });
       return out;
     }
-    var queue = keep(resume.queue);
-    var remaining = keep(resume.remaining);
-    pool.forEach(function (id) { if (!seen[id]) remaining.push(id); });
-    if (!queue.length && !remaining.length) return null;
+    var ids = keep(resume.queue).concat(keep(resume.remaining));
+    pool.forEach(function (id) { if (!seen[id]) ids.push(id); });
+    if (!ids.length) return null;
     return {
-      queue: queue,
-      remaining: remaining,
-      setTotal: queue.length ? Math.max(queue.length, resume.setTotal || 0) : 0,
-      setNo: queue.length ? Math.max(1, resume.setNo || 1) : Math.max(0, resume.setNo || 0)
+      queue: [],
+      remaining: order === 'weak-first' ? orderPool(ids, progress, order) : unseenFirst(ids, progress, true),
+      setTotal: 0,
+      setNo: Math.max(0, resume.setNo || 0)
     };
   }
 
@@ -142,7 +159,7 @@
     var now = opts.now || Date.now;
 
     var pool = selectPool(cards, progress, scope);
-    var restored = restoreOrder(pool, opts.resume, scope, order);
+    var restored = restoreOrder(pool, opts.resume, scope, order, progress);
     var remaining = restored ? restored.remaining : orderPool(pool, progress, order, rand);
     var queue = restored ? restored.queue : [];
     var setTotal = restored ? restored.setTotal : 0;
