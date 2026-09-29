@@ -4,8 +4,13 @@
  * 1 セット = 出題語数ぶんのキュー。
  *   覚えた   → その語は学習済みになりキューから外れる（以後の出題にも出ない）
  *   まだ     → 3 枚あとに積み直され、同じセットの中で必ずもう一度出る
- *   判定なし → 記録せずキューの末尾へ回す
+ *   判定なし → 覚えた／まだは記録せず、まだ出していない語に順番を譲る
+ *              （残りの語の最後へ回す。残りが無ければセットの末尾へ）
  * キューが空になったら、残りの語で次のセットが自動的に始まる。
+ *
+ * 表示した語には seen（回数）と seenAt（最後に表示した時刻）を付ける。
+ * 出題の並びは「まだ一度も表示していない語」が先、表示したことのある語は
+ * 最後に表示したのが古い順に後ろへ並ぶ。
  *
  * snapshot() で今どこまで進んだかを取り出し、次に create() へ resume として
  * 渡すと、同じ出題範囲・並び順ならその続きから始まる。
@@ -17,7 +22,7 @@
   var HISTORY_MAX = 50;
 
   function emptyProgress() {
-    return { learned: false, right: 0, wrong: 0, fav: false };
+    return { learned: false, right: 0, wrong: 0, fav: false, seen: 0, seenAt: 0 };
   }
 
   function progressOf(progress, id) {
@@ -56,17 +61,34 @@
     return pool;
   }
 
+  function seenAt(progress, id) {
+    var p = progress[id];
+    return p && p.seen ? (p.seenAt || 0) : -1;
+  }
+
   function orderPool(pool, progress, order, rand) {
-    if (order === 'random') return shuffle(pool, rand);
-    if (order === 'weak-first') {
-      return pool.slice().sort(function (a, b) {
+    var sorted;
+    if (order === 'random') sorted = shuffle(pool, rand);
+    else if (order === 'weak-first') {
+      sorted = pool.slice().sort(function (a, b) {
         var pa = progressOf(progress, a), pb = progressOf(progress, b);
         var wa = pa.wrong - pa.right, wb = pb.wrong - pb.right;
         if (wa !== wb) return wb - wa;
         return a - b;
       });
+    } else sorted = pool.slice();
+
+    // まだ表示していない語を先に。表示した語は最後に見たのが古い順（苦手順ではその並びのまま）
+    var fresh = [], shown = [];
+    sorted.forEach(function (id) { (seenAt(progress, id) < 0 ? fresh : shown).push(id); });
+    if (order !== 'weak-first') {
+      var rank = {};
+      shown.forEach(function (id, i) { rank[id] = i; });
+      shown.sort(function (a, b) {
+        return (seenAt(progress, a) - seenAt(progress, b)) || (rank[a] - rank[b]);
+      });
     }
-    return pool.slice();
+    return fresh.concat(shown);
   }
 
   /**
@@ -108,6 +130,7 @@
    * @param {string} opts.order     listed | random | weak-first
    * @param {Function} [opts.random]
    * @param {Object}   [opts.resume]  前回の snapshot()。範囲と並び順が同じなら続きから
+   * @param {Function} [opts.now]     時刻（テスト用）
    */
   function create(opts) {
     var cards = opts.cards || [];
@@ -116,6 +139,7 @@
     var scope = opts.scope || 'new';
     var order = opts.order || 'listed';
     var rand = opts.random;
+    var now = opts.now || Date.now;
 
     var pool = selectPool(cards, progress, scope);
     var restored = restoreOrder(pool, opts.resume, scope, order);
@@ -153,7 +177,9 @@
     function advance(id, gap, record) {
       queue.shift();
       pushHistory(id);
-      if (record !== 'remove') requeue(id, gap);
+      if (record === 'defer' && remaining.length) {
+        remaining.push(id);   // まだ出していない語に順番を譲る
+      } else if (record !== 'remove') requeue(id, gap);
       if (!queue.length) fillSet();
     }
 
@@ -215,7 +241,16 @@
       skip: function () {
         var id = currentId();
         if (id === null) return;
-        advance(id, queue.length, 'keep');
+        advance(id, queue.length, 'defer');
+      },
+
+      /** いまのカードを表示した、と記録する */
+      markSeen: function () {
+        var id = currentId();
+        if (id === null) return;
+        var p = progress[id] || (progress[id] = emptyProgress());
+        p.seen = (p.seen || 0) + 1;
+        p.seenAt = now();
       },
 
       /** 直前のカードに戻る（判定は取り消さない） */
@@ -224,6 +259,8 @@
         if (id === undefined) return false;
         var at = queue.indexOf(id);
         if (at !== -1) queue.splice(at, 1);
+        at = remaining.indexOf(id);
+        if (at !== -1) remaining.splice(at, 1);
         queue.unshift(id);
         return true;
       },
@@ -262,7 +299,14 @@
     return api;
   }
 
-  var api = { create: create, selectPool: selectPool, emptyProgress: emptyProgress };
+  /** 一度も表示していない語の数 */
+  function unseenCount(cards, progress, scope) {
+    return selectPool(cards, progress, scope).filter(function (id) {
+      return seenAt(progress, id) < 0;
+    }).length;
+  }
+
+  var api = { create: create, selectPool: selectPool, emptyProgress: emptyProgress, unseenCount: unseenCount };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
