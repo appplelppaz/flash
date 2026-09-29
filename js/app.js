@@ -228,9 +228,11 @@
     ring.appendChild(el('span', null, pct + '%'));
 
     var weak = scopeCount('weak'), fav = scopeCount('fav'), fresh = scopeCount('new');
+    var unseen = Session.unseenCount(deck.cards, deck.progress, 'all');
     $('deck-nums').innerHTML =
       '<div><b>' + total.toLocaleString('ja-JP') + '</b> 語 / 学習済み <b>' + learned.toLocaleString('ja-JP') + '</b></div>' +
-      '<div>未学習 <b>' + fresh + '</b> · 苦手 <b>' + weak + '</b> · ★ <b>' + fav + '</b></div>';
+      '<div>未学習 <b>' + fresh + '</b> · 苦手 <b>' + weak + '</b> · ★ <b>' + fav + '</b></div>' +
+      '<div>まだ表示していない語 <b>' + unseen.toLocaleString('ja-JP') + '</b></div>';
 
     document.querySelectorAll('#scope-picker button').forEach(function (b) {
       b.classList.toggle('on', b.dataset.scope === settings.scope);
@@ -673,6 +675,9 @@
     if (fresh) {
       st.stages = stagesFor(c);
       st.stage = 0;
+      // 表示した記録を残す（次からはまだ表示していない語が先に出る）
+      st.session.markSeen();
+      library.saveProgress(deck.meta.id, deck.progress);
       savePosition();
     }
 
