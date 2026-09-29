@@ -142,6 +142,23 @@
     return Promise.resolve();
   }
 
+  /** 前回どこまで再生したか（Session の snapshot） */
+  function position(id) {
+    return store.get('pos:' + id).then(function (p) { return p || null; });
+  }
+
+  function savePosition(id, pos, now) {
+    if (now) return store.set('pos:' + id, pos);
+    store.setSoon('pos:' + id, pos);
+    return Promise.resolve();
+  }
+
+  function clearPosition(id) {
+    // 書き込み待ちの位置に後から上書きされないよう、待ちの中身ごと null にして書き出す
+    store.setSoon('pos:' + id, null);
+    return store.flush();
+  }
+
   /** 進み具合の要約 */
   function summary(id, total) {
     var p = progCache[id];
@@ -201,12 +218,12 @@
     meta = meta.filter(function (m) { return m.id !== id; });
     delete cardCache[id];
     delete progCache[id];
-    return Promise.all([store.del('cards:' + id), store.del('prog:' + id)]).then(saveMeta);
+    return Promise.all([store.del('cards:' + id), store.del('prog:' + id), clearPosition(id)]).then(saveMeta);
   }
 
   function resetProgress(id) {
     progCache[id] = {};
-    return store.set('prog:' + id, {});
+    return Promise.all([store.set('prog:' + id, {}), clearPosition(id)]);
   }
 
   /** すべてのリストの進み具合を読み込む（一覧表示用） */
@@ -260,6 +277,9 @@
     progress: progress,
     cachedProgress: cachedProgress,
     saveProgress: saveProgress,
+    position: position,
+    savePosition: savePosition,
+    clearPosition: clearPosition,
     summary: summary,
     addList: addList,
     replaceCards: replaceCards,
